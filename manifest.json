@@ -39,13 +39,8 @@
           "width": 23,
           "height": 23,
           "path": "icons/panel.png",
-          "scale": [
-            1,
-            2
-          ],
-          "theme": [
-            "all"
-          ]
+          "scale": [1, 2],
+          "theme": ["all"]
         }
       ]
     }
@@ -55,16 +50,9 @@
       "width": 48,
       "height": 48,
       "path": "icons/plugin.png",
-      "scale": [
-        1,
-        2
-      ],
-      "theme": [
-        "all"
-      ],
-      "species": [
-        "pluginList"
-      ]
+      "scale": [1, 2],
+      "theme": ["all"],
+      "species": ["pluginList"]
     }
   ]
 }

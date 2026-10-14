@@ -19,9 +19,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: npm
+      - run: npm ci
       - run: npm test
-      - run: node tests/release.js
-      - run: node tests/package-ccx.js
       - run: npm run check
       - run: npm run stage
       - uses: actions/upload-artifact@v4

@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 18+, Photoshop 27.x, and UXP Developer Tool.
+Use Node.js 22+, Photoshop 27.x, and UXP Developer Tool. Run `npm ci` first.
 
 Before submitting a change, run:
 
@@ -8,6 +8,8 @@ Before submitting a change, run:
 npm test
 npm run check
 ```
+
+Edit TypeScript in `src/`; use `npm run watch` for compilation and `npm run format` for Biome formatting. Build before loading the plugin. Keep UXP globals separate from Node tooling types; SDK declaration gaps are isolated in `src/uxp-compat.d.ts` and the UI entrypoint adapter.
 
 For bug reports, include your Photoshop version, steps to reproduce, expected behavior, and relevant screenshots or errors. Remove private information.
 

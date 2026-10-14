@@ -1,13 +1,13 @@
 # CI and releases
 
-- **CI** runs tests and resource checks on Windows and Linux for pushes and pull requests.
+- **CI** installs locked dependencies, compiles TypeScript, and runs tests, type checks, Biome, and staging checks on Windows and Linux for pushes and pull requests.
 - **Release → Run workflow → main** builds a CCX as an Actions artifact without publishing.
 - Pushing a `vX.Y.Z` tag builds and publishes a GitHub Release. Tags ending in `-alpha.N`, `-beta.N`, or `-rc.N` publish as prereleases.
 
 ## Publish
 
 1. Keep `manifest.json` and `package.json` versions equal. Update `CHANGELOG.md`.
-2. Run `npm test` and `npm run check`, then complete the [Photoshop test checklist](TESTING.md).
+2. Run `npm ci`, `npm test` and `npm run check`, then complete the [Photoshop test checklist](TESTING.md).
 3. Commit and push the changes. Use a manual Release run to check the installer.
 4. Create and push a new version tag matching both version files. For example, after updating both to 0.3.1:
 
@@ -22,7 +22,7 @@ After a workflow fix, start a new run on the updated commit. Re-running an old j
 
 ## Local packaging
 
-Run `npm run stage`, then load the generated `dist/kio-color-picker-VERSION/manifest.json` in UXP Developer Tool. Use **Actions → Package** to create a CCX, then test installation through Creative Cloud Desktop. The staging directory can be deleted and regenerated; an existing stage is not overwritten.
+Run `npm ci` and `npm run stage`, then load the generated `dist/kio-color-picker-VERSION/manifest.json` in UXP Developer Tool. Staging compiles `src/` into `build/` and copies an explicit runtime allowlist. A staging test verifies all files and checksums; TypeScript sources, tests and development dependencies are excluded. Use **Actions → Package** to create a CCX, then test installation through Creative Cloud Desktop. The staging directory can be deleted and regenerated; an existing stage is not overwritten.
 
 ## Packaging implementation
 

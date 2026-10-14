@@ -18,12 +18,16 @@ Photoshop compatibility and shortcut behavior are still being tested. [Test chec
 
 ## Develop
 
-Load `manifest.json` in UXP Developer Tool. Node.js 18+ is required for local checks.
+Use Node.js 22+. Install dependencies and build before loading `manifest.json` in UXP Developer Tool.
 
 ```sh
+npm ci
+npm run build
 npm test
 npm run check
 npm run stage
 ```
+
+`src/` uses strict TypeScript with Adobe API types. Biome handles formatting and linting. Use `npm run watch` while developing and `npm run format` to apply formatting. Only compiled JavaScript and runtime assets are packaged.
 
 [CI and release instructions](docs/CI.md) · [MIT License](LICENSE)

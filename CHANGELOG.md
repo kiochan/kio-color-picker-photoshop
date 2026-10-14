@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Migrate runtime code to strict TypeScript with Adobe API types; add Biome and locked development dependencies. Compile and test CommonJS output before CI packaging.
+
 - Fix the 45-degree diamond display and color mapping.
 - Refine selection cursors with thinner black borders.
 - Simplify project documentation.

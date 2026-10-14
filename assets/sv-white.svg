@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">
+  <title>Saturation gradient</title>
   <!-- White alpha is 1-S. Endpoints follow the rotated square's saturation axis. -->
   <defs>
     <linearGradient id="white" gradientUnits="userSpaceOnUse" x1="250" y1="250" x2="750" y2="750">
