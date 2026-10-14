@@ -1,0 +1,73 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Validate release version
+        if: github.ref_type == 'tag'
+        run: node scripts/release-meta.js
+      - run: npm test
+      - run: node tests/release.js
+      - run: npm run check
+      - run: npm run stage
+      - name: Check out official Adobe CLI
+        uses: actions/checkout@v6
+        with:
+          repository: adobe-uxp/devtools-cli
+          ref: ef7e127b0e234e82b94d94e0c18443f3a738f929
+          path: .adobe-cli
+          persist-credentials: false
+      - name: Install Adobe CLI
+        shell: pwsh
+        run: |
+          npm install --global yarn@1.22.22
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          yarn --cwd .adobe-cli install --frozen-lockfile --non-interactive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package with Adobe CLI
+        run: node scripts/package-ccx.js
+      - name: Verify CCX and prepare release assets
+        run: node scripts/verify-ccx.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release/
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--verify-tag --title "Kio Color Picker ${RELEASE_TAG#v}" --notes-file release-assets/RELEASE_NOTES.md)
+          if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" release-assets/*.ccx release-assets/SHA256SUMS.txt release-assets/build-info.json "${args[@]}"

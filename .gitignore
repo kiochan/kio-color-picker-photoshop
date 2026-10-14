@@ -20,3 +20,5 @@ coverage/
 .aws/
 MagicPicker*/
 FocusFix*/
+
+.adobe-cli/

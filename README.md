@@ -1,7 +1,5 @@
 # Kio Color Picker
 
-[简体中文](README.zh-CN.md)
-
 A compact, dependency-free Adobe Photoshop UXP color picker for painting workflows. Version **0.3.0 is a beta candidate**, derived from the supplied Mini Color Picker 0.2.5 prototype. No release or official CCX has been produced.
 
 Features: circular hue wheel; clamped saturation/brightness diamond; actual RGB channel gradients; foreground/background selection and optional bidirectional HSB offsets; six-digit HEX paste/edit; compact vertical layout. Click a swatch to select it; double-click to open HEX, Enter to apply, Escape to cancel. Click the chain to link colors. Link offsets are fixed until relinking or a simultaneous external change of both colors; S/B clip at boundaries.
@@ -35,6 +33,10 @@ Root index.html/styles.css and the tiny main.js entry load src/main.js through U
 11 automated suites passed through a Node runtime on 2026-10-14. Layout tests verify computed dimensions, not actual UXP rendering. Photoshop loading, screenshots, color-managed documents, stylus input, native shortcuts, CCX installation and UDT packaging remain unverified. See [audit](docs/AUDIT.md), [test procedure](docs/TESTING.md), and [release procedure](docs/RELEASING.md).
 
 Polling every 500 ms supplements set/exchange/reset notifications. Continuous edits are throttled to 40 ms, but Photoshop modal availability determines actual latency. A modal failure shows an error; a subsequent edit can retry. An edit in progress wins for the edited swatch; unrelated external swatches are preserved. Hidden panels stop polling. No automatic focus transfer to the Photoshop canvas is claimed.
+
+## CI and releases
+
+GitHub Actions tests branch pushes and pull requests on Windows and Linux. The Release workflow builds a CCX using Adobe’s official CLI, verifies its contents and publishes on matching version-tag pushes (for example, v0.3.0-beta.1). Manual runs build artifacts without publishing. See [setup, trial run and release instructions](docs/CI.md). Cloud packaging still needs its first successful run; CI does not test Photoshop itself.
 
 ## Licensing
 

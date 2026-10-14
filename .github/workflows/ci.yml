@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm test
+      - run: node tests/release.js
+      - run: npm run check
+      - run: npm run stage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: udt-source-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error

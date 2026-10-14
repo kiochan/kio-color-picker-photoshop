@@ -2,6 +2,8 @@
 
 ## 0.3.0 — unreleased beta candidate
 
+- Add Windows/Linux CI and version-tag releases using the official Adobe CLI, CCX content verification, checksums and build provenance. Manual release workflow runs build artifacts without publishing.
+
 - Rename the plugin to Kio Color Picker; new independent plugin ID com.kiochan.colorpicker.
 - Replace incomplete diamond brightness mapping with a full rotated SV square and matching CSS gradients.
 - Preserve precise HSB at black and on unchanged RGB refreshes.
