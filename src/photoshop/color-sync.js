@@ -18,7 +18,7 @@ function createColorSync(ps,onError=()=>{},onSuccess=()=>{}) {
           if(target.fg&&!same(target.fg,fresh.fg))app.foregroundColor=solid(target.fg);
           if(target.bg&&!same(target.bg,fresh.bg))app.backgroundColor=solid(target.bg);
         },{commandName:'Choose color',timeOut:1.5});
-        onSuccess(read());
+        onSuccess(read(),target);
       }catch(error){onError(error);}
     }}finally{running=false;}
   }

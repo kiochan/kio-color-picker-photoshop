@@ -16,10 +16,20 @@ let rememberedHue={fg:3,bg:3};
 // cursor away from the exact black point (and made near-black positions jump).
 let preciseHsv={fg:rgbToHsv(colors.fg,3),bg:rgbToHsv(colors.bg,3)};
 let active='fg',linked=false;
+try { linked=localStorage.getItem('kio.linked')==='true'; } catch (_) { /* Storage may be unavailable. */ }
 let relative={h:0,s:0,v:0};  // BG's HSV offset relative to FG at link time
 let commitTimer=null,drag=null,initialized=false;
 let els={}, pollTimer=null, visible=true, notificationInstalled=false;
-const sync=createColorSync(ps,error=>{console.error('Kio Color Picker:',error);setStatus('Cannot write Photoshop colors: '+error.message,true);},()=>{setStatus('');});
+let observedHost={fg:null,bg:null};
+const sync=createColorSync(ps,error=>{console.error('Kio Color Picker:',error);setStatus('Cannot write Photoshop colors: '+error.message,true);},(fresh,target)=>{
+  // A color-managed host can return different RGB bytes. Acknowledge that echo
+  // instead of treating it as another external linked-color edit on every poll.
+  for(const key of Object.keys(target)) {
+    observedHost[key]=clone(fresh[key]);
+    if(same(colors[key],target[key]))colors[key]=clone(fresh[key]);
+  }
+  setStatus('');render();
+});
 const notification=()=>{if(visible)syncFromPhotoshop();};
 function startSync(){
   visible=true;
@@ -33,7 +43,7 @@ function startSync(){
 }
 function stopSync(){visible=false;if(pollTimer!==null){clearInterval(pollTimer);pollTimer=null;}}
 function closeHex(){if(els.hex&&document.activeElement===els.hex)els.hex.blur();if(els.hexBox)els.hexBox.classList.add('hidden');}
-function finishDrag(){if(drag){drag=null;queueWrite(true);}}
+function finishDrag(){if(drag){drag=null;queueWrite(true);resizePicker();}}
 const otherOf = id => id==='fg'?'bg':'fg';
 
 function relationFromForeground() {
@@ -51,6 +61,8 @@ function deriveOther(changed) {
 }
 function setStatus(str,fail=false) {
   if(!els.status)return;
+  if(els.status.textContent===str&&els.statusFailed===fail)return;
+  els.statusFailed=fail;
   els.status.textContent=str;
   els.status.classList.toggle('error',fail);
   resizePicker();
@@ -117,14 +129,17 @@ function syncFromPhotoshop(force=false) {
   if(document.activeElement===els.hex&&!force)return;
   try {
     const fresh=sync.read();
-    const fgChanged=!same(fresh.fg,colors.fg),bgChanged=!same(fresh.bg,colors.bg);
+    const fgChanged=!same(fresh.fg,observedHost.fg),bgChanged=!same(fresh.bg,observedHost.bg);
     if(!force&&!fgChanged&&!bgChanged)return;
-    colors={fg:clone(fresh.fg),bg:clone(fresh.bg)};
     for(const key of ['fg','bg']) {
+      const changed=key==='fg'?fgChanged:bgChanged;
+      if(!changed)continue;
+      colors[key]=clone(fresh[key]);
       const old=preciseHsv[key];
       // Preserve sub-byte precision and latent H/S on unchanged RGB, including show().
       if(!same(colors[key],hsvToRgb(old.h,old.s,old.v)))preciseHsv[key]=rgbToHsv(colors[key],old.h,old.s);
     }
+    observedHost={fg:clone(fresh.fg),bg:clone(fresh.bg)};
     rememberedHue={fg:preciseHsv.fg.h,bg:preciseHsv.bg.h};
     if(linked&&!force&&fgChanged!==bgChanged) {
       // Preserve the FG/BG relationship even when Photoshop's eyedropper changes one swatch.
@@ -137,25 +152,29 @@ function syncFromPhotoshop(force=false) {
   } catch(err) {if(force){console.error(err);setStatus('Cannot read Photoshop colors',true);}}
 }
 function pointerPos(evt) {
-  const rect=els.picker.getBoundingClientRect();
+  const rect=drag&&drag.rect?drag.rect:els.picker.getBoundingClientRect();
   return {x:(evt.clientX-rect.left)/rect.width,y:(evt.clientY-rect.top)/rect.height};
 }
 function updatePicker(region,pos,immediate=false) {
   const hsv={...preciseHsv[active]};
-  if(region==='ring')hsv.h=normalizedHue(Math.atan2(pos.x-.5,.5-pos.y)*180/Math.PI+45);
+  if(region==='ring') {
+    // Angle is undefined near the center: keep the last hue there.
+    if(Math.hypot(pos.x-.5,pos.y-.5)<.08)return;
+    hsv.h=normalizedHue(Math.atan2(pos.x-.5,.5-pos.y)*180/Math.PI+45);
+  }
   else {
     Object.assign(hsv,pointToSv(pos));
   }
   setSelectedHsv(hsv,immediate);
 }
 function updateSlider(key,evt,immediate=false) {
-  const track=els['slider-'+key].querySelector('.slider-track'),rect=track.getBoundingClientRect();
+  const track=els['slider-'+key].querySelector('.slider-track'),rect=drag&&drag.rect?drag.rect:track.getBoundingClientRect();
   const ratio=clamp((evt.clientX-rect.left)/rect.width,0,1);
   const rgb=clone(colors[active]);rgb[key]=Math.round(ratio*255);
   setSelectedRgb(rgb,immediate);
 }
 function resizePicker() {
-  if(!initialized)return;
+  if(!initialized||drag)return;
   const width=window.innerWidth||document.documentElement.clientWidth||315;
   const height=window.innerHeight||document.documentElement.clientHeight||465;
   // Photoshop can resize a UXP panel without updating body height immediately.
@@ -202,6 +221,7 @@ function init() {
   els.link.addEventListener('click',evt=>{
     evt.preventDefault();finishDrag();if(commitTimer!==null)queueWrite(true);closeHex();linked=!linked;
     if(linked)relationFromForeground();
+    try { localStorage.setItem('kio.linked',String(linked)); } catch (_) { /* Keep session state. */ }
     render();
   });
   els.hex.addEventListener('keydown',evt=>{
@@ -214,11 +234,11 @@ function init() {
     if(evt.button!==0)return;
     const pos=pointerPos(evt),region=pickerRegion(pos);
     if(!region)return;
-    evt.preventDefault();closeHex();drag={type:region};updatePicker(region,pos);
+    evt.preventDefault();closeHex();drag={type:region,rect:els.picker.getBoundingClientRect()};updatePicker(region,pos);
   });
   for(const key of ['r','g','b'])els['slider-'+key].addEventListener('mousedown',evt=>{
     if(evt.button!==0)return;
-    evt.preventDefault();closeHex();drag={type:'slider',key};updateSlider(key,evt);
+    evt.preventDefault();closeHex();drag={type:'slider',key,rect:els['track-'+key].getBoundingClientRect()};updateSlider(key,evt);
   });
   document.addEventListener('mousemove',evt=>{
     if(!drag)return;

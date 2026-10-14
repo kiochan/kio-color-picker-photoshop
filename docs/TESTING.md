@@ -17,4 +17,6 @@ Status: **all host checks below pending**. Record date, Windows build, Photoshop
 
 ## Automated coverage
 
-npm test contains 11 suites, including 4096 RGB round trips, 10201 SV round trips, diamond projection, dynamic ramps, linked boundaries, layout calculations, modal queue/error mocks, continuous/canceled gestures, external/own notifications and HEX focus cleanup. The mock DOM is not a browser or UXP renderer. Scripts/check.js validates only the explicit local checks described in README.
+Latest regression additions: link-toggle persistence across reloads, a fixed coordinate frame during diamond drags, and color-managed host echoes without linked feedback. There are now 14 plugin suites. In Photoshop, additionally verify link ON and OFF each survive a plugin reload/application restart; drag slowly through the diamond while linked and unlinked; inspect the larger black/white cursor on pure white, pure black and saturated colors. These host checks remain pending.
+
+npm test contains 14 suites, including 4096 RGB round trips, 10201 SV round trips, diamond projection, dynamic ramps, linked boundaries, layout calculations, modal queue/error mocks, continuous/canceled gestures, external/own notifications and HEX focus cleanup. The mock DOM is not a browser or UXP renderer. Scripts/check.js validates only the explicit local checks described in README.

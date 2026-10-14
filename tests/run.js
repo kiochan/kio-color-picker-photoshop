@@ -3,20 +3,20 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const C=require('../src/color/conversions.js'),G=require('../src/ui/geometry.js'),S=require('../src/color/state.js');
 const {createColorSync}=require('../src/photoshop/color-sync.js');
-function host(){
+function host(mapColor=c=>c){
   class SolidColor{constructor(){this.rgb={red:0,green:0,blue:0};}}
   const solid=rgb=>{const c=new SolidColor();Object.assign(c.rgb,{red:rgb.r,green:rgb.g,blue:rgb.b});return c;};
   let fg=solid({r:142,g:41,b:36}),bg=solid({r:153,g:43,b:31}),listener=()=>{},writes=0,calls=0,gate=null,fail=false;
-  const app={SolidColor,get foregroundColor(){return fg;},set foregroundColor(c){fg=c;writes++;listener();},get backgroundColor(){return bg;},set backgroundColor(c){bg=c;writes++;listener();}};
+  const app={SolidColor,get foregroundColor(){return fg;},set foregroundColor(c){fg=mapColor(c);writes++;listener();},get backgroundColor(){return bg;},set backgroundColor(c){bg=mapColor(c);writes++;listener();}};
   return {app,core:{async executeAsModal(fn,options){assert.equal(options.timeOut,1.5);calls++;if(gate)await gate;if(fail){fail=false;throw Error('host busy');}await fn();}},action:{async addNotificationListener(events,fn){listener=fn;}},get writes(){return writes;},get calls(){return calls;},set gate(p){gate=p;},set fail(v){fail=v;},external(key,rgb){if(key==='fg')fg=solid(rgb);else bg=solid(rgb);listener();}};
 }
 const flush=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
-function harness(){
-  const ps=host(),elements={},timers=new Map();let tick=0,lifecycle;
+function harness(storage={},mapColor){
+  const ps=host(mapColor),elements={},timers=new Map();let tick=0,lifecycle;
   function element(id){return {id,style:{},value:'',textContent:'',classList:{toggle(){},add(){},remove(){}},listeners:{},clientWidth:296,clientHeight:390,offsetHeight:69,setAttribute(){},addEventListener(k,fn){(this.listeners[k]||=[]).push(fn);},emit(k,e={}){for(const fn of this.listeners[k]||[])fn(Object.assign({button:0,buttons:1,clientX:150,clientY:80,preventDefault(){}},e));},getBoundingClientRect(){return {left:0,top:0,width:200,height:200};},querySelector(){return element('track');},focus(){doc.activeElement=this;},blur(){if(doc.activeElement===this)doc.activeElement=null;},select(){}};}
   const doc=element('document');doc.readyState='complete';doc.activeElement=null;doc.documentElement=element('html');doc.getElementById=id=>elements[id]||=(element(id));doc.querySelector=()=>doc.getElementById('slider-area');
   const win=element('window');win.innerWidth=310;win.innerHeight=455;
-  const context=vm.createContext({console,document:doc,window:win,require:name=>name==='photoshop'?ps:name==='uxp'?{entrypoints:{setup(v){lifecycle=v.panels.pickerPanel;}}}:require(path.resolve(__dirname,'../src',name)),setTimeout:fn=>{timers.set(++tick,fn);return tick;},clearTimeout:id=>timers.delete(id),setInterval:()=>999,clearInterval(){}});
+  const context=vm.createContext({console,localStorage:{getItem:k=>storage[k]??null,setItem:(k,v)=>{storage[k]=v;}},document:doc,window:win,require:name=>name==='photoshop'?ps:name==='uxp'?{entrypoints:{setup(v){lifecycle=v.panels.pickerPanel;}}}:require(path.resolve(__dirname,'../src',name)),setTimeout:fn=>{timers.set(++tick,fn);return tick;},clearTimeout:id=>timers.delete(id),setInterval:()=>999,clearInterval(){}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8')+'\n globalThis.testApi={get colors(){return colors;},get hsv(){return preciseHsv;},get drag(){return drag;},setSelectedHsv,setSelectedRgb,selectColor,syncFromPhotoshop};',context);
   return {ps,elements,doc,win,lifecycle,api:context.testApi,tick(){const fns=[...timers.values()];timers.clear();fns.forEach(fn=>fn());}};
 }
@@ -69,6 +69,30 @@ async function run(){
  await test('HEX rejects invalid input; picker and hide release text focus',async()=>{
    const h=harness();h.elements.foreground.emit('dblclick');assert.equal(h.doc.activeElement,h.elements['hex-input']);h.elements['hex-input'].value='bad';h.elements['hex-input'].emit('keydown',{key:'Enter'});assert.equal(h.ps.writes,0);h.elements['hex-input'].value='#000000';h.elements['hex-input'].emit('keydown',{key:'Enter'});await flush();assert.equal(h.doc.activeElement,null);assert.equal(h.api.colors.fg.r,0);
    h.elements.foreground.emit('dblclick');h.elements.picker.emit('mousedown',{clientX:100,clientY:10});assert.equal(h.doc.activeElement,null);h.lifecycle.hide();assert.equal(h.api.drag,null);
+ });
+ await test('Link preference survives reload in both directions',async()=>{
+   const storage={},first=harness(storage);first.elements['link-colors'].emit('click');
+   assert.equal(storage['kio.linked'],'true');
+   const second=harness(storage);second.api.setSelectedHsv({h:120,s:.7,v:.8},true);await flush();
+   assert.equal(second.ps.writes,2);
+   second.elements['link-colors'].emit('click');assert.equal(storage['kio.linked'],'false');
+   const third=harness(storage);third.api.setSelectedHsv({h:180,s:.8,v:.7},true);await flush();assert.equal(third.ps.writes,1);
+ });
+ await test('Diamond drag keeps its coordinate frame across layout notifications',async()=>{
+   const h=harness();h.elements.picker.emit('mousedown',{clientX:120,clientY:110});
+   const before={...h.api.hsv.fg};h.elements.picker.getBoundingClientRect=()=>({left:20,top:30,width:140,height:140});
+   h.win.emit('resize');h.tick();await flush();
+   h.doc.emit('mousemove',{clientX:120,clientY:110});
+   assert.equal(h.api.hsv.fg.s,before.s);assert.equal(h.api.hsv.fg.v,before.v);
+   h.doc.emit('mouseup');await flush();
+ });
+ await test('Color-managed write echoes do not cause linked feedback or cursor jumps',async()=>{
+   const h=harness({'kio.linked':'true'},c=>{c.rgb.red=Math.min(255,c.rgb.red+1);return c;});
+   h.api.setSelectedHsv({h:21,s:.654321,v:.765432},true);await flush();const writes=h.ps.writes;
+   for(let i=0;i<5;i++){h.api.syncFromPhotoshop();await flush();}
+   h.api.syncFromPhotoshop(true);
+   assert.equal(h.ps.writes,writes);assert.equal(h.api.hsv.fg.s,.654321);assert.equal(h.api.hsv.fg.v,.765432);
+   h.ps.external('bg',{r:40,g:100,b:200});await flush();assert.ok(h.ps.writes>writes);
  });
  return results;
 }
