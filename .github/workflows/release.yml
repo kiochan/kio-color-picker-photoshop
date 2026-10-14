@@ -24,6 +24,7 @@ jobs:
         run: node scripts/release-meta.js
       - run: npm test
       - run: node tests/release.js
+      - run: node tests/package-ccx.js
       - run: npm run check
       - run: npm run stage
       - name: Check out official Adobe CLI
@@ -33,14 +34,14 @@ jobs:
           ref: ef7e127b0e234e82b94d94e0c18443f3a738f929
           path: .adobe-cli
           persist-credentials: false
-      - name: Install Adobe CLI
+      - name: Install Adobe packaging dependencies (no native build scripts)
         shell: pwsh
         run: |
           npm install --global yarn@1.22.22
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          yarn --cwd .adobe-cli install --frozen-lockfile --non-interactive
+          yarn --cwd .adobe-cli install --frozen-lockfile --non-interactive --ignore-scripts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Package with Adobe CLI
+      - name: Package with Adobe packaging module
         run: node scripts/package-ccx.js
       - name: Verify CCX and prepare release assets
         run: node scripts/verify-ccx.js

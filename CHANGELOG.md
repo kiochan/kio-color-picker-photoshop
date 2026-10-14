@@ -2,6 +2,8 @@
 
 ## 0.3.0 — unreleased beta candidate
 
+- Fix CI installation failure in robotjs by skipping dependency lifecycle scripts and invoking Adobe’s pinned packaging module without the GUI/service toolchain; retain manifest/package-content checks.
+
 - Add Windows/Linux CI and version-tag releases using the official Adobe CLI, CCX content verification, checksums and build provenance. Manual release workflow runs build artifacts without publishing.
 
 - Rename the plugin to Kio Color Picker; new independent plugin ID com.kiochan.colorpicker.

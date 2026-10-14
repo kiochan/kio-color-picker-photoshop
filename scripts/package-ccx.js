@@ -1,23 +1,36 @@
 "use strict";
-const fs=require('node:fs'),path=require('node:path'),net=require('node:net'),{spawn}=require('node:child_process');
+const fs=require('node:fs'),path=require('node:path');
 const {check,root}=require('./check.js');
-const cli=path.join(root,'.adobe-cli/packages/uxp-devtools-cli/src/uxp.js');
-function run(args){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[cli,...args],{cwd:root,windowsHide:true,stdio:'inherit',timeout:120000});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(Error('Adobe CLI exited '+code)));});}
-function ready(){return new Promise(resolve=>{const socket=net.connect(14001,'127.0.0.1');socket.setTimeout(500);socket.once('connect',()=>{socket.destroy();resolve(true);});socket.once('error',()=>{socket.destroy();resolve(false);});socket.once('timeout',()=>{socket.destroy();resolve(false);});});}
+const packagerPath=path.join(root,'.adobe-cli/packages/uxp-devtools-core/src/core/client/plugin/actions/PluginPackageCommand.js');
+// Call the pinned, unmodified Adobe packaging implementation. Do not load the
+// CLI/service/desktop driver, whose native addons are unrelated to packaging.
+// package() calls packageHost(), including Adobe's validateForPackaging checks.
+// Photoshop-dependent strict manifest validation remains a separate host test.
+async function packageWithAdobe(Packager,params,expected,io=fs){
+ if(io.existsSync(expected))throw Error('Refusing stale CCX output: use a fresh CI checkout.');
+ const command=new Packager(null,params);
+ const results=await command.package();
+ if(!Array.isArray(results)||results.length!==1||results[0].success!==true||results[0].host!=='PS'){
+   const messages=Array.isArray(results)?results.map(r=>r.error?.message||'Unexpected packaging result').join('; '):'No packaging results';
+   throw Error('Adobe packaging failed: '+messages);
+ }
+ if(!io.existsSync(expected)||io.statSync(expected).size===0)throw Error('Adobe packager did not produce a CCX');
+ return expected;
+}
 async function main(){
  const {version}=check();
- if(!fs.existsSync(cli))throw Error('Official Adobe CLI checkout/install is required; see docs/CI.md');
+ if(!fs.existsSync(packagerPath))throw Error('Pinned Adobe CLI source checkout is required; see docs/CI.md');
+ const manifest=path.join(root,'dist','kio-color-picker-'+version,'manifest.json');
+ if(!fs.existsSync(manifest))throw Error('Run npm run stage first');
  const output=path.join(root,'dist/ccx');fs.mkdirSync(output,{recursive:true});
  const expected=path.join(output,'com.kiochan.colorpicker_PS.ccx');
- if(fs.existsSync(expected))throw Error('Refusing stale CCX output: use a fresh CI checkout.');
- const service=spawn(process.execPath,[cli,'service','start'],{cwd:root,windowsHide:true,stdio:'inherit'});
- let spawnError;service.on('error',e=>{spawnError=e;});
- try{
-   let connected=false;
-   for(let i=0;i<60;i++){if(spawnError)throw spawnError;if(await ready()){connected=true;break;}await new Promise(r=>setTimeout(r,500));}
-   if(!connected)throw Error('Adobe UXP service did not become ready');
-   await run(['plugin','package','--manifest',path.join(root,'dist','kio-color-picker-'+version,'manifest.json'),'--apps','PS','--outputPath',output]);
-   if(!fs.existsSync(expected)||fs.statSync(expected).size===0)throw Error('Adobe CLI did not produce a CCX');
- }finally{try{await run(['service','stop']);}catch(e){console.warn(e.message);}service.kill();}
+ const Packager=require(packagerPath);
+ console.log('Using unmodified Adobe PluginPackageCommand.package(); no Photoshop host validation.');
+ await packageWithAdobe(Packager,{manifest,apps:['PS'],packageDir:output},expected);
+ console.log('Adobe CCX created; content verification is the next required step.');
 }
-if(require.main===module)main().catch(e=>{console.error(e);process.exitCode=1;});
+module.exports={packageWithAdobe,main};
+if(require.main===module){
+ const timeout=setTimeout(()=>{console.error('Adobe packaging timed out');process.exit(1);},120000);
+ main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>clearTimeout(timeout));
+}

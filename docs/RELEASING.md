@@ -1,6 +1,6 @@
 # Preparing the first beta
 
-Automated option: see [CI and releases](CI.md). The Release workflow packages with Adobe CLI and publishes on a matching tag push; manual dispatch only builds downloadable artifacts. The UDT procedure below remains available for local packaging.
+Automated option: see [CI and releases](CI.md). The Release workflow packages with the unmodified packaging module from pinned Adobe CLI source and publishes on a matching tag push; manual dispatch only builds downloadable artifacts. The UDT procedure below remains available for local packaging.
 
 Current candidate: 0.3.0. Suggested future Git tag: v0.3.0-beta.1; UXP manifest/package version remains numeric 0.3.0. Suggested GitHub repository description: Lightweight Photoshop UXP color picker with a hue wheel, SV diamond and linked foreground/background colors.
 

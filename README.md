@@ -36,7 +36,7 @@ Polling every 500 ms supplements set/exchange/reset notifications. Continuous ed
 
 ## CI and releases
 
-GitHub Actions tests branch pushes and pull requests on Windows and Linux. The Release workflow builds a CCX using Adobe’s official CLI, verifies its contents and publishes on matching version-tag pushes (for example, v0.3.0-beta.1). Manual runs build artifacts without publishing. See [setup, trial run and release instructions](docs/CI.md). Cloud packaging still needs its first successful run; CI does not test Photoshop itself.
+GitHub Actions tests branch pushes and pull requests on Windows and Linux. The Release workflow builds a CCX using the packaging module from Adobe’s pinned CLI source, verifies its contents and publishes on matching version-tag pushes (for example, v0.3.0-beta.1). Manual runs build artifacts without publishing. See [setup, trial run and release instructions](docs/CI.md). The first cloud attempt failed during native dependency installation; the revised packaging path still needs a successful cloud run; CI does not test Photoshop itself.
 
 ## Licensing
 
