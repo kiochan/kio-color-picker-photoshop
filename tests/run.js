@@ -38,6 +38,32 @@ async function run(){
    for(let x=-2;x<=2;x+=.1)for(let y=-2;y<=2;y+=.1){const p=G.constrainToDiamond({x,y});assert.ok(Math.abs(p.x-.5)+Math.abs(p.y-.5)<=.38000001);}
    assert.equal(G.pickerRegion({x:.5,y:.04}),'ring');assert.equal(G.pickerRegion({x:.5,y:.5}),'diamond');
  });
+ await test('Drawn 45-degree diamond gradients match HSV and pointer coordinates',()=>{
+   const css=fs.readFileSync(path.join(__dirname,'../styles.css'),'utf8');
+   const rule=/\.diamond\s*\{([^}]+)\}/.exec(css)[1];
+   assert.ok(!/transform\s*:/.test(rule),'Diamond must not depend on UXP CSS rotation');
+   const percent=name=>Number(new RegExp('(?:^|;)\\s*'+name+':\\s*([\\d.]+)%').exec(rule)[1])/100;
+   const width=percent('width'),height=percent('height'),left=percent('left'),top=percent('top');
+   function gradient(file){
+     const svg=fs.readFileSync(path.join(__dirname,'../assets',file),'utf8');
+     assert.match(svg,/points="500,0 1000,500 500,1000 0,500"/);
+     const values=['x1','y1','x2','y2'].map(k=>Number(new RegExp(k+'="([\\d.]+)"').exec(svg)[1]));
+     const alpha=[...svg.matchAll(/stop-opacity="([\d.]+)"/g)].map(m=>Number(m[1]));
+     return (x,y)=>{const [x1,y1,x2,y2]=values,dx=x2-x1,dy=y2-y1;
+       const t=C.clamp(((x-x1)*dx+(y-y1)*dy)/(dx*dx+dy*dy),0,1);
+       return alpha[0]+t*(alpha[1]-alpha[0]);};
+   }
+   const white=gradient('sv-white.svg'),black=gradient('sv-black.svg');
+   for(const [s,v,x,y] of [[0,1,.5,.12],[1,1,.88,.5],[1,0,.5,.88],[0,0,.12,.5]]){
+     const point=G.hsvToPoint({s,v});assert.ok(Math.abs(point.x-x)<1e-12&&Math.abs(point.y-y)<1e-12);
+   }
+   for(const hue of [0,93,241])for(let s=0;s<=10;s++)for(let v=0;v<=10;v++){
+     const hsv={h:hue,s:s/10,v:v/10},point=G.hsvToPoint(hsv);
+     const x=(point.x-left)/width*1000,y=(point.y-top)/height*1000;
+     const wa=white(x,y),ba=black(x,y),base=C.hsvToRgb(hue,1,1),expected=C.hsvToRgb(hue,hsv.s,hsv.v);
+     for(const key of ['r','g','b'])assert.ok(Math.abs(Math.round((base[key]*(1-wa)+255*wa)*(1-ba))-expected[key])<=1,JSON.stringify({hsv,x,y,wa,ba,key,base,expected}));
+   }
+ });
  await test('Bidirectional linked offsets wrap and retain unclipped relation',()=>{
    const a={h:350,s:.2,v:.4},b={h:10,s:.7,v:.8},rel=S.relation(a,b);assert.equal(rel.h,20);
    const linked=S.linkedColor(a,rel,1);assert.ok(Math.abs(linked.s-b.s)<1e-12);assert.equal(linked.h,b.h);

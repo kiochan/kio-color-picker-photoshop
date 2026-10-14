@@ -1,7 +1,7 @@
 "use strict";
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.resolve(__dirname,'..');
-const runtime=['LICENSE','manifest.json','index.html','main.js','styles.css','src/main.js','src/color/conversions.js','src/color/state.js','src/ui/geometry.js','src/photoshop/color-sync.js','assets/hue-ring.png','icons/panel.png','icons/panel@2x.png','icons/plugin.png','icons/plugin@2x.png'];
+const runtime=['LICENSE','manifest.json','index.html','main.js','styles.css','src/main.js','src/color/conversions.js','src/color/state.js','src/ui/geometry.js','src/photoshop/color-sync.js','assets/hue-ring.png','assets/sv-white.svg','assets/sv-black.svg','assets/sv-matte.svg','icons/panel.png','icons/panel@2x.png','icons/plugin.png','icons/plugin@2x.png'];
 function check(){
  const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8')),pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
  if(manifest.version!==pkg.version)throw Error('Version mismatch');

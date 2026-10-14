@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">
+  <!-- Black alpha is 1-V, perpendicular to saturation. No CSS rotation needed. -->
+  <defs>
+    <linearGradient id="black" gradientUnits="userSpaceOnUse" x1="750" y1="250" x2="250" y2="750">
+      <stop offset="0" stop-color="#000000" stop-opacity="0" />
+      <stop offset="1" stop-color="#000000" stop-opacity="1" />
+    </linearGradient>
+  </defs>
+  <polygon points="500,0 1000,500 500,1000 0,500" fill="url(#black)" />
+</svg>
