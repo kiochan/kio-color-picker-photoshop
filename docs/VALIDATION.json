@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-14",
+  "version": "0.3.0",
+  "environment": "Available Node runtime using CommonJS and VM; PowerShell process launch unavailable",
+  "automatedSuites": 11,
+  "result": "passed",
+  "checks": [
+    "4096 RGB round trips",
+    "10201 SV round trips",
+    "hue wrap and RGB gradients",
+    "linked offsets and clamping",
+    "layout calculations",
+    "serialized/coalesced host writes and recovery",
+    "continuous drag and cancellation",
+    "own/external notification simulation",
+    "HEX and focus cleanup",
+    "14 runtime resources plus LICENSE and icon dimensions",
+    "15 staged files byte-identical to source and SHA-256 list",
+    "hue-ring primary/secondary angle sampling and transparent center/corner"
+  ],
+  "notVerified": [
+    "Actual UXP rendering",
+    "Photoshop 27.2 loading and color management",
+    "B/E/X keyboard focus recovery",
+    "Stylus input",
+    "UDT official packaging and CCX installation"
+  ],
+  "licensing": {
+    "license": "MIT",
+    "attribution": "Copyright (c) 2026 Kiochan",
+    "basis": "Project owner confirmed inherited code and PNGs were created from scratch on 2026-10-14"
+  }
+}

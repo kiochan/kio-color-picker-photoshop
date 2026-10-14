@@ -1,0 +1,58 @@
+[
+  {
+    "file": "main.js",
+    "sha256": "3d8e195902aae2f34ba6c910fe88ee1c336998c11b79f85c2749cccd8a241816"
+  },
+  {
+    "file": "styles.css",
+    "sha256": "d3ccf7eeff21151a3ab14abda6eba12518e7f502078efef005f3ad6e8209b631"
+  },
+  {
+    "file": "index.html",
+    "sha256": "74011cef20d001b07f95babdd0ecc6aa838776509ddbbe26c20dc984215f88cd"
+  },
+  {
+    "file": "manifest.json",
+    "sha256": "70347e46a9e0a836a9f84dca0dad1a168b7a13e6dbe7612c9bd12cbcbc5d3aa5"
+  },
+  {
+    "file": "assets/diamond-black.png",
+    "sha256": "627095f7efbe4e58a9a733cfa7561ddede6e71a474361e8c4a4e10ded9486af1"
+  },
+  {
+    "file": "assets/diamond-matte-dark.png",
+    "sha256": "307666743fe5f4e270ae4ac30b39dab9639008b2c9bf5384df39ee8c7355cc83"
+  },
+  {
+    "file": "assets/diamond-white.png",
+    "sha256": "d979e9ac6cdff83b38a2a26abc6c4b483b4085884c76fcb172745cf66451085b"
+  },
+  {
+    "file": "assets/hue-ring.png",
+    "sha256": "02a75180d7dde9ad25883846f4c5c0eab2fe08b1dbd1fae0d45b7da9b3205cb5"
+  },
+  {
+    "file": "icons/header.png",
+    "sha256": "9d09941a89366030f734649cb47dd5f5a346c47828d8e4de1608016dd651d4c1"
+  },
+  {
+    "file": "icons/panel.png",
+    "sha256": "7fa9f2b58eeb39cc430247510a946e5e564a779fdf6c6d763edfd319e18f34b5"
+  },
+  {
+    "file": "icons/panel@2x.png",
+    "sha256": "0988e41ce3d03667c22df7ef3c94efad54098fa72fc6191f8136ce9d15103ce9"
+  },
+  {
+    "file": "icons/plugin-512.png",
+    "sha256": "7868aecb1c179284cd4c6df6481d144609ad604c5b413f13b47139fe59fb630b"
+  },
+  {
+    "file": "icons/plugin.png",
+    "sha256": "c667eae9486ca475415a555b2941fc52e61a8ba28b8d566c4977df75ce5026aa"
+  },
+  {
+    "file": "icons/plugin@2x.png",
+    "sha256": "202140b9eaad978c6ff9d396035fb7e7da3e5f5ff2d842f079ae69354f1cb575"
+  }
+]
