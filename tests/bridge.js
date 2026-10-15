@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { PickerModel } = require("../build/picker/model.js");
 const { createController } = require("../build/bridge/controller.js");
-const { isClientMessage, isHostMessage, BRIDGE } = require("../build/bridge/protocol.js");
+const { isClientMessage, isHostMessage, BRIDGE, PROTOCOL } = require("../build/bridge/protocol.js");
 const { hsvToRgb } = require("../build/color/conversions.js");
 const { relation } = require("../build/color/state.js");
 const state = new PickerModel();
@@ -39,113 +39,123 @@ assert.deepEqual(managed.ingest(fresh), { changed: false, write: false });
 function mockHost() {
   class SolidColor {
     constructor() {
-      this.rgb = { red: 0, green: 0, blue: 0 };
+      this.rgb = { red: 100, green: 0, blue: 0 };
     }
   }
-  const solid = () => {
-    const c = new SolidColor();
-    c.rgb.red = 100;
-    return c;
-  };
   return {
-    app: { SolidColor, foregroundColor: solid(), backgroundColor: solid() },
+    app: { SolidColor, foregroundColor: new SolidColor(), backgroundColor: new SolidColor() },
     core: { executeAsModal: async (fn) => fn() },
   };
 }
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+function client(controller, session = "client") {
+  const envelope = { channel: BRIDGE, version: PROTOCOL, session };
+  controller.show();
+  controller.receive({ ...envelope, type: "ready" });
+  const model = new PickerModel();
+  model.state = controller.model.snapshot();
+  let seq = 0;
+  const writes = { fg: 0, bg: 0 };
+  const packet = (command) => {
+    model.apply(command);
+    seq++;
+    if (command.kind === "hsv" || command.kind === "rgb") {
+      writes[model.state.active] = seq;
+      if (model.state.linked) writes[model.state.active === "fg" ? "bg" : "fg"] = seq;
+    }
+    return {
+      ...envelope,
+      type: "update",
+      seq,
+      operation: 1,
+      final: (command.kind !== "hsv" && command.kind !== "rgb") || command.final,
+      state: model.snapshot(),
+      writes: { ...writes },
+    };
+  };
+  return {
+    model,
+    packet,
+    send(command) {
+      const value = packet(command);
+      controller.receive(value);
+      return value;
+    },
+  };
+}
 async function run() {
-  const host = mockHost(),
-    messages = [],
-    settings = new Map();
-  const controller = createController(host, (value) => messages.push(value), {
+  const messages = [],
+    settings = new Map(),
+    host = mockHost();
+  const storage = {
     getItem: (key) => settings.get(key) ?? null,
     setItem: (key, value) => settings.set(key, value),
-  });
-  const envelope = { channel: BRIDGE, version: 1, session: "first" };
-  const ready = { ...envelope, type: "ready" };
-  let seq = 0;
-  const send = (command) =>
-    controller.receive({ ...envelope, type: "command", seq: ++seq, command });
-  controller.show();
-  controller.receive(ready);
+  };
+  const controller = createController(host, (value) => messages.push(value), storage);
+  const ui = client(controller);
   assert.ok(isHostMessage(messages.at(-1)));
-  assert.equal(messages.at(-1).visible, true);
-  send({ kind: "link", linked: true });
+  const missing = ui.packet({ kind: "rgb", value: { r: 12, g: 34, b: 56 }, final: false });
+  const final = ui.packet({ kind: "finish" });
+  controller.receive(final); // The entire intermediate stream can be missing.
+  await flush();
+  assert.deepEqual(host.app.foregroundColor.rgb, { red: 12, green: 34, blue: 56 });
+  assert.equal(messages.at(-1).committedSeq, final.seq);
+  assert.equal(messages.at(-1).applied.fg, missing.seq);
+  controller.receive(missing);
+  assert.deepEqual(
+    controller.model.snapshot(),
+    ui.model.snapshot(),
+    "Old operations cannot roll state back",
+  );
+  ui.send({ kind: "link", linked: true });
   assert.equal(settings.get("kio.linked"), "true");
-  send({ kind: "link", linked: false });
-  send({ kind: "hsv", value: { h: 120, s: 0.8, v: 0.7 }, final: false });
-  const edited = controller.model.snapshot();
-  host.app.backgroundColor.rgb.blue = 99;
+  ui.send({ kind: "link", linked: false });
+
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let calls = 0;
+  host.core.executeAsModal = async (fn) => {
+    calls++;
+    await gate;
+    return fn();
+  };
+  const held = ui.send({ kind: "rgb", value: { r: 7, g: 8, b: 9 }, final: true });
+  assert.equal(messages.at(-1).seq, held.seq);
+  assert.ok(
+    messages.at(-1).committedSeq < held.seq,
+    "Receipt is not a successful write acknowledgement",
+  );
+  assert.ok(messages.at(-1).applied.fg < held.writes.fg);
+  for (let i = 0; i < 100; i++)
+    ui.send({ kind: "rgb", value: { r: i, g: 20, b: 30 }, final: false });
+  ui.send({ kind: "select", swatch: "bg" });
+  ui.send({ kind: "rgb", value: { r: 3, g: 4, b: 5 }, final: true });
+  const wanted = ui.send({ kind: "finish" });
+  host.app.foregroundColor.rgb.red = 255;
   controller.poll();
   assert.deepEqual(
     controller.model.snapshot(),
-    edited,
-    "Do not overwrite a gesture with host polling",
+    wanted.state,
+    "Host polling cannot take ownership during a write",
   );
-  await new Promise((resolve) => setTimeout(resolve, 60));
-  assert.deepEqual(
-    host.app.foregroundColor.rgb,
-    { red: 36, green: 179, blue: 36 },
-    "Continuous dragging reaches Photoshop before release",
-  );
-  send({ kind: "finish" });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(host.app.foregroundColor.rgb, { red: 36, green: 179, blue: 36 });
+  release();
+  await flush();
   assert.equal(
-    host.app.backgroundColor.rgb.blue,
-    99,
-    "Independent edit preserves the other host swatch",
+    calls,
+    2,
+    "Only in-flight and latest queued targets are written, not 100 old motions",
   );
-  const before = controller.model.snapshot();
-  controller.receive({
-    ...envelope,
-    type: "command",
-    seq: 1,
-    command: { kind: "select", swatch: "bg" },
-  });
-  controller.receive({
-    ...envelope,
-    session: "stale",
-    type: "command",
-    seq: 999,
-    command: { kind: "link", linked: true },
-  });
-  assert.deepEqual(
-    controller.model.snapshot(),
-    before,
-    "Ignore reordered or stale-session commands",
-  );
-  for (const invalid of [
-    null,
-    {},
-    { ...ready, version: 2 },
-    { ...ready, session: "" },
-    {
-      ...envelope,
-      type: "command",
-      seq: 99,
-      command: { kind: "hsv", value: { h: NaN, s: 1, v: 1 }, final: true },
-    },
-    {
-      ...envelope,
-      type: "command",
-      seq: 99,
-      command: { kind: "rgb", value: { r: 256, g: 0, b: 0 }, final: true },
-    },
-  ]) {
-    assert.equal(isClientMessage(invalid), false);
-    controller.receive(invalid);
-  }
-  controller.hide();
-  assert.equal(messages.at(-1).visible, false);
-  send({ kind: "link", linked: true });
-  assert.equal(controller.model.state.linked, false, "Ignore hidden panel commands");
-  controller.show();
-  controller.receive({ ...ready, session: "reload" });
-  assert.equal(messages.at(-1).seq, 0);
-  assert.equal(messages.at(-1).session, "reload");
-  const reloaded = createController(host, () => {}, { getItem: () => "true", setItem() {} });
-  assert.equal(reloaded.model.state.linked, true);
-  // Modal failures must surface, release the queue, and allow the next gesture.
+  assert.deepEqual(host.app.foregroundColor.rgb, { red: 99, green: 20, blue: 30 });
+  assert.deepEqual(host.app.backgroundColor.rgb, { red: 3, green: 4, blue: 5 });
+  assert.equal(messages.at(-1).committedSeq, wanted.seq);
+  assert.deepEqual(messages.at(-1).applied, wanted.writes);
+  const before = calls;
+  controller.receive(wanted);
+  await flush();
+  assert.equal(calls, before, "Retransmitting a committed final packet is idempotent");
+
   let fail = true;
   host.core.executeAsModal = async (fn) => {
     if (fail) {
@@ -154,27 +164,63 @@ async function run() {
     }
     return fn();
   };
-  controller.receive({
-    ...ready,
-    type: "command",
-    session: "reload",
-    seq: 1,
-    command: { kind: "rgb", value: { r: 1, g: 2, b: 3 }, final: true },
-  });
-  await new Promise((resolve) => setImmediate(resolve));
+  const failed = ui.send({ kind: "rgb", value: { r: 80, g: 90, b: 100 }, final: true });
+  await flush();
   assert.match(messages.at(-1).error, /host busy/);
-  controller.receive({
-    ...ready,
-    type: "command",
-    session: "reload",
-    seq: 2,
-    command: { kind: "rgb", value: { r: 4, g: 5, b: 6 }, final: true },
-  });
-  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(messages.at(-1).committedSeq < failed.seq);
+  host.app.backgroundColor.rgb.green = 255;
+  controller.poll();
+  assert.deepEqual(
+    controller.model.snapshot(),
+    failed.state,
+    "Failure keeps local intent instead of reverting to host colors",
+  );
+  controller.receive(failed);
+  await flush();
+  assert.match(
+    messages.at(-1).error,
+    /host busy/,
+    "A duplicate packet does not silently retry a modal error",
+  );
+  const retry = { ...failed, seq: failed.seq + 1 };
+  controller.receive(retry);
+  await flush();
   assert.equal(messages.at(-1).error, "");
-  assert.deepEqual(host.app.foregroundColor.rgb, { red: 4, green: 5, blue: 6 });
+  assert.equal(messages.at(-1).committedSeq, retry.seq);
+  assert.deepEqual(host.app.backgroundColor.rgb, { red: 80, green: 90, blue: 100 });
+  host.app.foregroundColor.rgb.blue = 200;
+  controller.poll();
+  assert.equal(messages.at(-1).reason, "external");
+  assert.equal(messages.at(-1).state.colors.fg.b, 200, "Genuine idle Photoshop edits are accepted");
+  for (let i = 1; i < messages.length; i++)
+    assert.ok(messages[i].revision > messages[i - 1].revision);
+
+  const ready = { channel: BRIDGE, version: PROTOCOL, session: "replacement", type: "ready" };
+  controller.receive(ready);
+  controller.receive({ ...ready, session: "client" });
+  assert.equal(messages.at(-1).session, "replacement", "Retired WebViews cannot reclaim ownership");
+  assert.equal(messages.at(-1).seq, 0);
+  controller.hide();
+  assert.equal(messages.at(-1).visible, false);
+  assert.equal(isHostMessage({ ...messages.at(-1), committedSeq: 9999 }), false);
+  assert.equal(isHostMessage({ ...messages.at(-1), revision: undefined }), false);
+  for (const invalid of [
+    null,
+    {},
+    { ...wanted, version: 1 },
+    { ...wanted, operation: 999999 },
+    { ...wanted, writes: { fg: wanted.seq + 1, bg: 0 } },
+    {
+      ...wanted,
+      state: {
+        ...wanted.state,
+        colors: { fg: { r: 999, g: 0, b: 0 }, bg: wanted.state.colors.bg },
+      },
+    },
+  ])
+    assert.equal(isClientMessage(invalid), false);
   console.log(
-    "PASS precise HSV, linked host edits, persisted settings, bridge validation/order/reload, gesture flush, modal recovery",
+    "PASS full final-state recovery, exact successful-write versions, latest-only queue, idempotent retransmit, failure/retry ownership, idle host edits and session isolation",
   );
 }
 run().catch((error) => {

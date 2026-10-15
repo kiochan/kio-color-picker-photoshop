@@ -3,14 +3,15 @@ import { clone, same } from "../color/conversions.js";
 import type { Colors, ColorWrite, RGB } from "../color/types.js";
 import { swatches } from "../color/types.js";
 // Host access and serialization are isolated from UI. Only edited channels are written.
-export function createColorSync(
+export function createColorSync<Request = undefined>(
   ps: typeof Photoshop,
-  onError: (error: unknown) => void = () => {},
-  onSuccess: (fresh: Colors, target: ColorWrite) => void = () => {},
+  onError: (error: unknown, request: Request | undefined) => void = () => {},
+  onSuccess: (fresh: Colors, target: ColorWrite, request: Request | undefined) => void = () => {},
 ) {
   const { app, core } = ps;
   let pending: ColorWrite | null = null,
     running = false;
+  let pendingRequest: Request | undefined;
   const readRgb = (c: InstanceType<typeof ps.app.SolidColor>): RGB => ({
     r: Math.round(c.rgb.red),
     g: Math.round(c.rgb.green),
@@ -30,7 +31,9 @@ export function createColorSync(
     try {
       while (pending) {
         const target = pending;
+        const request = pendingRequest;
         pending = null;
+        pendingRequest = undefined;
         try {
           await core.executeAsModal(
             async () => {
@@ -40,9 +43,9 @@ export function createColorSync(
             },
             { commandName: "Choose color", timeOut: 1.5 },
           );
-          onSuccess(read(), target);
+          onSuccess(read(), target, request);
         } catch (error) {
-          onError(error);
+          onError(error, request);
         }
       }
     } finally {
@@ -54,8 +57,9 @@ export function createColorSync(
     get busy() {
       return running || !!pending;
     },
-    write(target: ColorWrite) {
+    write(target: ColorWrite, request?: Request) {
       pending ??= {};
+      pendingRequest = request;
       for (const key of swatches) {
         const color = target[key];
         if (color) pending[key] = clone(color);

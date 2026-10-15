@@ -101,7 +101,7 @@ listeners.DOMContentLoaded();
 assert.equal(view.style.width, "310px");
 assert.equal(view.style.height, "455px");
 assert.equal(intervals.size, 1);
-const ready = { channel: "kio-color-picker", version: 1, session: "shell-test", type: "ready" };
+const ready = { channel: "kio-color-picker", version: 2, session: "shell-test", type: "ready" };
 listeners.message({ source: {}, data: ready });
 assert.equal(messages.length, 0, "Reject other message sources");
 listeners.message({ source: view, data: ready });
@@ -109,7 +109,15 @@ assert.equal(messages.at(-1).session, "shell-test");
 assert.equal(messages.at(-1).visible, true);
 listeners.message({
   source: view,
-  data: { ...ready, type: "command", seq: 1, command: { kind: "link", linked: true } },
+  data: {
+    ...ready,
+    type: "update",
+    seq: 1,
+    operation: 1,
+    final: true,
+    writes: { fg: 0, bg: 0 },
+    state: { ...messages.at(-1).state, linked: true },
+  },
 });
 assert.equal(storage.get("kio.linked"), "true");
 panel.hide();

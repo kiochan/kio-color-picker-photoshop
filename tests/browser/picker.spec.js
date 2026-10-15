@@ -1,6 +1,285 @@
 const { test, expect } = require("@playwright/test");
 const { hsvToRgb } = require("../../build/color/conversions.js");
 const { hsvToPoint } = require("../../build/ui/geometry.js");
+const { createController } = require("../../build/bridge/controller.js");
+const { PickerModel } = require("../../build/picker/model.js");
+
+test("100–300ms bidirectional jitter does not move the final color after rapid swatch edits", async ({
+  page,
+}) => {
+  class SolidColor {
+    constructor() {
+      this.rgb = { red: 36, green: 179, blue: 36 };
+    }
+  }
+  const host = {
+    app: { SolidColor, foregroundColor: new SolidColor(), backgroundColor: new SolidColor() },
+    core: {
+      executeAsModal: async (fn) => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return fn();
+      },
+    },
+  };
+  const tasks = [],
+    commands = [];
+  let serial = 0;
+  const later = (fn, delay) =>
+    tasks.push(
+      new Promise((resolve, reject) =>
+        setTimeout(() => {
+          Promise.resolve().then(fn).then(resolve, reject);
+        }, delay),
+      ),
+    );
+  const controller = createController(
+    host,
+    (message) => {
+      later(
+        () =>
+          page.evaluate((value) => window.deliver(value), {
+            ...message,
+            revision: message.revision + 1000,
+          }),
+        100 + ((++serial * 73) % 201),
+      );
+    },
+    { getItem: () => null, setItem() {} },
+  );
+  controller.show();
+  const session = await page.evaluate(() => window.session);
+  controller.receive({ channel: "kio-color-picker", version: 2, session, type: "ready" });
+  await Promise.all(tasks);
+  const expected = new PickerModel();
+  expected.state = controller.model.snapshot();
+  await page.exposeFunction("delayedHost", (message) => {
+    commands.push(message);
+    later(() => controller.receive(message), 100 + ((message.seq * 137) % 201));
+  });
+  await page.evaluate(() => {
+    window.uxpHost.postMessage = (message) => {
+      void window.delayedHost(message);
+    };
+  });
+  for (const [swatch, channel, ratio] of [
+    ["Foreground color", "r", 0.9],
+    ["Background color", "g", 0.25],
+  ]) {
+    await page.getByRole("button", { name: swatch, exact: true }).click();
+    const box = await page.getByTestId(`track-${channel}`).boundingBox();
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * ratio, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up();
+  }
+  await page.getByRole("button", { name: "Foreground color", exact: true }).click();
+  const final = await page.getByLabel("R value").textContent();
+  await page.evaluate(() => {
+    window.outputHistory = [];
+    new MutationObserver(() =>
+      window.outputHistory.push(document.querySelector('[aria-label="R value"]').textContent),
+    ).observe(document.querySelector('[aria-label="R value"]'), {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  });
+  // Wait until command timers, modal writes, and new response timers all drain.
+  for (let size = -1; size !== tasks.length; ) {
+    size = tasks.length;
+    await Promise.all(tasks);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  for (let size = -1; size !== tasks.length; ) {
+    size = tasks.length;
+    await Promise.all(tasks);
+  }
+  expected.state = commands.sort((a, b) => a.seq - b.seq).at(-1).state;
+  expect(commands.length).toBeGreaterThan(10);
+  expect(controller.model.snapshot()).toEqual(expected.snapshot());
+  expect(host.app.foregroundColor.rgb).toEqual({
+    red: expected.state.colors.fg.r,
+    green: expected.state.colors.fg.g,
+    blue: expected.state.colors.fg.b,
+  });
+  expect(host.app.backgroundColor.rgb).toEqual({
+    red: expected.state.colors.bg.r,
+    green: expected.state.colors.bg.g,
+    blue: expected.state.colors.bg.b,
+  });
+  await expect(page.getByLabel("R value")).toHaveText(final);
+  expect(
+    await page.evaluate(() =>
+      window.outputHistory.every(
+        (value) => value === document.querySelector('[aria-label="R value"]').textContent,
+      ),
+    ),
+  ).toBe(true);
+});
+
+test("uncommitted echoes and sync timeout preserve color and cursor; Retry confirms the same target", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    window.holdReplies = true;
+  });
+  await page.getByRole("button", { name: "Foreground color", exact: true }).dblclick();
+  await page.getByLabel("HEX", { exact: true }).fill("#D62828");
+  await page.getByLabel("HEX", { exact: true }).press("Enter");
+  const cursor = await page.locator(".sv-cursor").getAttribute("style");
+  const box = await page.getByTestId("picker").boundingBox();
+  const seq = await page.evaluate(() => {
+    const value = window.commands.at(-1);
+    const wrong = structuredClone(value.state);
+    wrong.colors.fg = { r: 0, g: 0, b: 255 };
+    wrong.hsv.fg = { h: 240, s: 1, v: 1 };
+    window.deliver({
+      ...value,
+      type: "state",
+      committedSeq: 0,
+      applied: { fg: 0, bg: 0 },
+      reason: "ack",
+      state: wrong,
+      error: "",
+      visible: true,
+    });
+    return value.seq;
+  });
+  await expect(page.getByLabel("R value")).toHaveText("214");
+  expect(await page.locator(".sv-cursor").getAttribute("style")).toBe(cursor);
+  await expect(page.locator(".status")).toContainText("Sync delayed", { timeout: 6000 });
+  await expect(page.getByLabel("R value")).toHaveText("214");
+  expect(await page.getByTestId("picker").boundingBox()).toEqual(box);
+  expect(await page.locator(".sv-cursor").getAttribute("style")).toBe(cursor);
+  await page.evaluate(() => {
+    window.holdReplies = false;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".status")).toBeEmpty();
+  const retry = await page.evaluate(() => window.commands.at(-1));
+  expect(retry.seq).toBeGreaterThan(seq);
+  expect(retry.final).toBe(true);
+  expect(retry.state.colors.fg).toEqual({ r: 214, g: 40, b: 40 });
+  expect(await page.locator(".sv-cursor").getAttribute("style")).toBe(cursor);
+});
+
+test("successful color-managed echoes cannot move the cursor; only idle external edits can", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    window.holdReplies = true;
+  });
+  const box = await page.getByTestId("picker").boundingBox();
+  await page.mouse.move(box.x + box.width * 0.65, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect
+    .poll(async () =>
+      page
+        .locator(".sv-cursor")
+        .evaluate((element) => Math.abs(Number.parseFloat(element.style.top) - 50)),
+    )
+    .toBeLessThan(0.00001);
+  const cursor = await page.locator(".sv-cursor").getAttribute("style");
+  const rgb = await page.getByLabel("R value").textContent();
+  await page.evaluate(() => {
+    const final = window.commands.at(-1);
+    const corrected = structuredClone(final.state);
+    corrected.colors.fg = { r: 1, g: 2, b: 3 };
+    corrected.hsv.fg = { h: 240, s: 0.8, v: 0.1 };
+    window.deliver({
+      ...final,
+      type: "state",
+      committedSeq: final.seq,
+      applied: final.writes,
+      reason: "ack",
+      state: corrected,
+      error: "",
+      visible: true,
+    });
+  });
+  await expect(page.getByLabel("R value")).toHaveText(rgb);
+  expect(await page.locator(".sv-cursor").getAttribute("style")).toBe(cursor);
+  await page.evaluate(() => {
+    const final = window.commands.at(-1);
+    const external = structuredClone(final.state);
+    external.colors.fg = { r: 255, g: 0, b: 0 };
+    external.hsv.fg = { h: 0, s: 1, v: 1 };
+    window.deliver({
+      ...final,
+      type: "state",
+      committedSeq: final.seq,
+      applied: final.writes,
+      reason: "external",
+      state: external,
+      error: "",
+      visible: true,
+    });
+  });
+  await expect(page.getByLabel("R value")).toHaveText("255");
+  expect(await page.locator(".sv-cursor").getAttribute("style")).not.toBe(cursor);
+});
+
+test("a lost final packet is resent as the complete target without replaying intermediate colors", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const send = window.uxpHost.postMessage;
+    window.uxpHost.postMessage = (message) => {
+      if (message.type === "update" && message.final && !window.droppedFinal) {
+        window.droppedFinal = message;
+        return;
+      }
+      send(message);
+    };
+  });
+  await page.getByRole("button", { name: "Foreground color", exact: true }).dblclick();
+  // Swatch selection is also a final snapshot; discard only the color commit.
+  await page.evaluate(() => {
+    window.droppedFinal = null;
+  });
+  await page.getByLabel("HEX", { exact: true }).fill("#E71122");
+  await page.getByLabel("HEX", { exact: true }).press("Enter");
+  const dropped = await page.evaluate(() => window.droppedFinal);
+  expect(dropped.state.colors.fg).toEqual({ r: 231, g: 17, b: 34 });
+  await expect(page.getByLabel("R value")).toHaveText("231");
+  await expect.poll(() => page.evaluate(() => window.commands.at(-1)?.seq)).toBe(dropped.seq);
+  await expect(page.locator(".status")).toBeEmpty();
+  const resent = await page.evaluate(() => window.commands.at(-1));
+  expect(resent.seq).toBe(dropped.seq);
+  expect(resent.state).toEqual(dropped.state);
+  await expect(page.getByLabel("R value")).toHaveText("231");
+});
+
+test("transport exceptions preserve the selected color and allow explicit retry", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const send = window.uxpHost.postMessage;
+    window.transportBroken = true;
+    window.uxpHost.postMessage = (value) => {
+      if (window.transportBroken) throw new Error("WebView transport unavailable");
+      send(value);
+    };
+  });
+  await page.getByRole("button", { name: "Foreground color", exact: true }).dblclick();
+  await page.getByLabel("HEX", { exact: true }).fill("#102030");
+  await page.getByLabel("HEX", { exact: true }).press("Enter");
+  await expect(page.getByLabel("R value")).toHaveText("16");
+  await expect(page.locator(".status")).toContainText("Sync delayed");
+  await page.evaluate(() => {
+    document.querySelector(".status button").addEventListener(
+      "click",
+      () => {
+        window.transportBroken = false;
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".status")).toBeEmpty();
+  await expect(page.getByLabel("B value")).toHaveText("48");
+});
 
 test.beforeEach(async ({ page }) => {
   const errors = [];
@@ -8,6 +287,7 @@ test.beforeEach(async ({ page }) => {
   page.on("close", () => expect(errors).toEqual([]));
   await page.addInitScript(() => {
     window.commands = [];
+    window.hostRevision = 0;
     window.hostState = {
       colors: { fg: { r: 36, g: 179, b: 36 }, bg: { r: 153, g: 43, b: 31 } },
       hsv: { fg: { h: 120, s: 0.8, v: 0.7 }, bg: { h: 6, s: 0.8, v: 0.6 } },
@@ -16,6 +296,15 @@ test.beforeEach(async ({ page }) => {
       relative: { h: 0, s: 0, v: 0 },
     };
     window.deliver = (message, origin = "com.kiochan.colorpicker", source = window.uxpHost) => {
+      message = {
+        committedSeq: message.seq,
+        operation: 0,
+        applied: { fg: 0, bg: 0 },
+        reason: message.visible === false ? "lifecycle" : "external",
+        ...message,
+      };
+      if (message.revision === undefined) message = { ...message, revision: ++window.hostRevision };
+      else window.hostRevision = Math.max(window.hostRevision, message.revision);
       const event = new Event("message");
       Object.defineProperties(event, {
         source: { value: source },
@@ -40,12 +329,53 @@ test.beforeEach(async ({ page }) => {
               }),
             0,
           );
-        } else window.commands.push(message);
+        } else {
+          window.commands.push(message);
+          if (!window.holdReplies)
+            setTimeout(
+              () =>
+                window.deliver({
+                  ...message,
+                  type: "state",
+                  committedSeq: message.seq,
+                  applied: message.writes,
+                  reason: "ack",
+                  error: "",
+                  visible: true,
+                }),
+              0,
+            );
+        }
       },
     };
   });
   await page.goto("/");
   await expect(page.locator(".status")).toBeEmpty();
+});
+
+test("late snapshots with the same command number never restore an older color", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const packet = {
+      channel: "kio-color-picker",
+      version: 2,
+      session: window.session,
+      type: "state",
+      seq: 0,
+      error: "",
+      visible: true,
+    };
+    const older = structuredClone(window.hostState);
+    const newer = structuredClone(window.hostState);
+    newer.colors.fg = { r: 255, g: 0, b: 0 };
+    newer.hsv.fg = { h: 0, s: 1, v: 1 };
+    window.deliver({ ...packet, revision: 200, state: newer });
+    setTimeout(() => window.deliver({ ...packet, revision: 199, state: older }), 100);
+  });
+  await expect(page.getByLabel("R value")).toHaveText("255");
+  await page.waitForTimeout(200);
+  await expect(page.getByLabel("R value")).toHaveText("255");
 });
 
 test("pointer cancellation and host hide terminate gestures and close the HEX editor", async ({
@@ -55,14 +385,14 @@ test("pointer cancellation and host hide terminate gestures and close the HEX ed
   await page.mouse.move(picker.x + picker.width * 0.5, picker.y + picker.height * 0.3);
   await page.mouse.down();
   await page.locator(".picker-input").dispatchEvent("pointercancel");
-  await expect.poll(() => page.evaluate(() => window.commands.at(-1)?.command.kind)).toBe("finish");
+  await expect.poll(() => page.evaluate(() => window.commands.at(-1)?.final)).toBe(true);
   await page.mouse.up();
   await page.getByRole("button", { name: "Foreground color", exact: true }).dblclick();
   await expect(page.getByLabel("HEX", { exact: true })).toBeFocused();
   await page.evaluate(() =>
     window.deliver({
       channel: "kio-color-picker",
-      version: 1,
+      version: 2,
       session: window.session,
       type: "state",
       seq: window.commands.at(-1)?.seq ?? 0,
@@ -108,7 +438,7 @@ test("actual canvas pixels match HSV, including the previously black diamond and
       window.hostState.hsv.fg.h = h;
       window.deliver({
         channel: "kio-color-picker",
-        version: 1,
+        version: 2,
         session: window.session,
         type: "state",
         seq: 0,
@@ -195,7 +525,7 @@ test("pointer capture, frozen resize coordinates, cancellation, and final flush"
   expect((await page.getByTestId("picker").boundingBox()).width).toBe(picker.width);
   await page.mouse.move(419, 519);
   await page.mouse.up();
-  await expect.poll(() => page.evaluate(() => window.commands.at(-1)?.command.kind)).toBe("finish");
+  await expect.poll(() => page.evaluate(() => window.commands.at(-1)?.final)).toBe(true);
   const count = await page.evaluate(() => window.commands.length);
   await page.mouse.move(200, 200);
   expect(await page.evaluate(() => window.commands.length)).toBe(count);
@@ -222,7 +552,7 @@ test("HEX editing, linking, swatch selection and stale host messages", async ({ 
   await page.evaluate(() => {
     const stale = {
       channel: "kio-color-picker",
-      version: 1,
+      version: 2,
       session: window.session,
       type: "state",
       seq: 0,

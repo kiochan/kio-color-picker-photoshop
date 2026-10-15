@@ -7,6 +7,7 @@ import type { Command } from "../src/picker/model.js";
 import { PickerModel } from "../src/picker/model.js";
 import { hsvToPoint, layout, pickerRegion, pointToSv } from "../src/ui/geometry.js";
 import type { PickerRegion } from "../src/ui/types.js";
+import type { SyncPhase } from "./bridge.js";
 import { createBridge } from "./bridge.js";
 import { drawPicker } from "./draw.js";
 
@@ -21,6 +22,7 @@ export function App() {
   const [state, setState] = useState(model.current.snapshot());
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [syncPhase, setSyncPhase] = useState<SyncPhase>("idle");
   const [hexOpen, setHexOpen] = useState(false);
   const [hex, setHex] = useState("");
   const [hexError, setHexError] = useState("");
@@ -31,30 +33,15 @@ export function App() {
   const bridge = useRef<ReturnType<typeof createBridge> | null>(null);
   const [dimension, setDimension] = useState(180);
   const [railWidth, setRailWidth] = useState(192);
-  const pendingCommand = useRef<Command | null>(null);
-  const frame = useRef<number | null>(null);
   const activeHsv = state.hsv[state.active];
 
-  const sendPending = useCallback(() => {
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
-    frame.current = null;
-    if (pendingCommand.current) bridge.current?.command(pendingCommand.current);
-    pendingCommand.current = null;
+  const command = useCallback((value: Command) => {
+    model.current.apply(value);
+    const snapshot = model.current.snapshot();
+    setState(snapshot);
+    setError("");
+    bridge.current?.command(value, snapshot);
   }, []);
-  const command = useCallback(
-    (value: Command) => {
-      model.current.apply(value);
-      setState(model.current.snapshot());
-      if ((value.kind === "hsv" || value.kind === "rgb") && !value.final) {
-        pendingCommand.current = value;
-        if (frame.current === null) frame.current = requestAnimationFrame(sendPending);
-      } else {
-        sendPending();
-        bridge.current?.command(value);
-      }
-    },
-    [sendPending],
-  );
   const measure = useCallback(() => {
     if (gesture.current || !work.current) return;
     const box = work.current.getBoundingClientRect();
@@ -68,35 +55,33 @@ export function App() {
     gesture.current = null;
     if (current.element.hasPointerCapture(current.pointer))
       current.element.releasePointerCapture(current.pointer);
-    sendPending();
-    bridge.current?.command({ kind: "finish" });
+    bridge.current?.command({ kind: "finish" }, model.current.snapshot());
     measure();
-  }, [measure, sendPending]);
+  }, [measure]);
   const closeHex = useCallback(() => {
     hexInput.current?.blur();
     setHexOpen(false);
     setHexError("");
   }, []);
   useEffect(() => {
-    bridge.current = createBridge((message) => {
+    bridge.current = createBridge((message, acceptState) => {
       setConnected(true);
       setError(message.error);
       if (!message.visible) {
         finish();
         closeHex();
       }
-      // Acknowledgements never quantize an in-progress local gesture.
-      if (!gesture.current) {
+      // Only idle host edits may replace local intent.
+      if (acceptState && !gesture.current) {
         model.current.state = message.state;
         setState(model.current.snapshot());
       }
-    });
+    }, setSyncPhase);
     return () => {
-      sendPending();
       bridge.current?.dispose();
       bridge.current = null;
     };
-  }, [closeHex, finish, sendPending]);
+  }, [closeHex, finish]);
   useLayoutEffect(() => {
     const observer = new ResizeObserver(measure);
     if (work.current) observer.observe(work.current);
@@ -188,6 +173,7 @@ export function App() {
             <button
               key={swatch}
               type="button"
+              disabled={!connected}
               className={`swatch ${swatch} ${state.active === swatch ? "selected" : ""}`}
               aria-label={swatch === "fg" ? "Foreground color" : "Background color"}
               aria-pressed={state.active === swatch}
@@ -205,6 +191,7 @@ export function App() {
         <button
           type="button"
           className={`link ${state.linked ? "active" : ""}`}
+          disabled={!connected}
           aria-label="Link foreground and background"
           aria-pressed={state.linked}
           title="Keep foreground/background HSB differences"
@@ -316,7 +303,19 @@ export function App() {
         </section>
       </div>
       <div className="status" role="status">
-        {error || (!connected ? "Connecting to Photoshop…" : "")}
+        {error ||
+          (syncPhase === "delayed"
+            ? "Sync delayed. Your color is kept."
+            : syncPhase === "error"
+              ? "Color sync failed. Your color is kept."
+              : !connected
+                ? "Connecting to Photoshop…"
+                : "")}
+        {(syncPhase === "delayed" || syncPhase === "error") && (
+          <button type="button" onClick={() => bridge.current?.retry()}>
+            Retry
+          </button>
+        )}
       </div>
     </main>
   );
