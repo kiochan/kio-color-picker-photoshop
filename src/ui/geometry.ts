@@ -72,3 +72,17 @@ export function layout(width: number, height: number) {
     railWidth: Math.min(Math.max(1, width - 6), 492, Math.max(220, dimension + 12)),
   };
 }
+export function scaledLayout(width: number, height: number) {
+  const scale = Math.max(0.01, Math.min(width / 360, height / 480));
+  const logicalWidth = width / scale,
+    logicalHeight = height / scale;
+  const fontSize = Math.max(12, 12 / scale);
+  const extraRows = Math.max(20, fontSize * 1.8) * 3 - 60;
+  return {
+    scale,
+    fontSize,
+    width: logicalWidth,
+    height: logicalHeight,
+    ...layout(logicalWidth - 14, logicalHeight - 65 - extraRows),
+  };
+}

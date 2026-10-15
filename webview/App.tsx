@@ -5,10 +5,17 @@ import type { Channel, HSV, Swatch } from "../src/color/types.js";
 import { channels } from "../src/color/types.js";
 import type { Command } from "../src/picker/model.js";
 import { PickerModel } from "../src/picker/model.js";
-import { hsvToPoint, layout, pickerRegion, pointToSv } from "../src/ui/geometry.js";
-import type { PickerRegion } from "../src/ui/types.js";
+import {
+  constrainToDiamond,
+  hsvToPoint,
+  pickerRegion,
+  pointToSv,
+  scaledLayout,
+} from "../src/ui/geometry.js";
+import type { PickerRegion, Point } from "../src/ui/types.js";
 import type { SyncPhase } from "./bridge.js";
 import { createBridge } from "./bridge.js";
+import { createCursorMotion } from "./cursor-motion.js";
 import { drawPicker } from "./draw.js";
 
 type Gesture = {
@@ -27,15 +34,27 @@ export function App() {
   const [hex, setHex] = useState("");
   const [hexError, setHexError] = useState("");
   const hexInput = useRef<HTMLInputElement>(null);
-  const work = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const svMarker = useRef<HTMLDivElement>(null);
+  const hueMarker = useRef<HTMLDivElement>(null);
+  const motion = useRef<ReturnType<typeof createCursorMotion> | null>(null);
+  // Pointer coordinates own the markers; color conversion never drives an active drag.
+  const pointerPose = useRef<{ sv: Point | null; angle: number | null }>({ sv: null, angle: null });
   const gesture = useRef<Gesture | null>(null);
+  const pendingPoint = useRef<Point | null>(null);
+  const dragFrame = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
   const bridge = useRef<ReturnType<typeof createBridge> | null>(null);
-  const [dimension, setDimension] = useState(180);
-  const [railWidth, setRailWidth] = useState(192);
+  const [frame, setFrame] = useState(() => scaledLayout(window.innerWidth, window.innerHeight));
+  const { dimension, railWidth, scale } = frame;
   const activeHsv = state.hsv[state.active];
 
   const command = useCallback((value: Command) => {
+    if (value.kind !== "hsv" && value.kind !== "finish") {
+      motion.current?.dispose();
+      motion.current = null;
+      pointerPose.current = { sv: null, angle: null };
+    }
     model.current.apply(value);
     const snapshot = model.current.snapshot();
     setState(snapshot);
@@ -43,21 +62,46 @@ export function App() {
     bridge.current?.command(value, snapshot);
   }, []);
   const measure = useCallback(() => {
-    if (gesture.current || !work.current) return;
-    const box = work.current.getBoundingClientRect();
-    const next = layout(box.width, box.height);
-    setDimension(next.dimension);
-    setRailWidth(next.railWidth);
+    if (gesture.current) return;
+    setFrame(scaledLayout(window.innerWidth, window.innerHeight));
   }, []);
+  const applyPoint = useCallback(
+    (pos: Point) => {
+      const region = gesture.current?.region;
+      if (!region) return;
+      const hsv: HSV = { ...model.current.state.hsv[model.current.state.active] };
+      if (region === "ring") {
+        if (Math.hypot(pos.x - 0.5, pos.y - 0.5) < 0.08) return;
+        hsv.h = normalizedHue((Math.atan2(pos.x - 0.5, 0.5 - pos.y) * 180) / Math.PI + 45);
+        command({ kind: "hsv", value: hsv, final: false });
+      } else if (region === "diamond") {
+        command({ kind: "hsv", value: { ...hsv, ...pointToSv(pos, hsv.s) }, final: false });
+      } else {
+        const rgb = { ...model.current.state.colors[model.current.state.active] };
+        rgb[region] = Math.round(clamp(pos.x, 0, 1) * 255);
+        command({ kind: "rgb", value: rgb, final: false });
+      }
+    },
+    [command],
+  );
+  const flushPoint = useCallback(() => {
+    if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
+    dragFrame.current = null;
+    const point = pendingPoint.current;
+    pendingPoint.current = null;
+    if (point) applyPoint(point);
+  }, [applyPoint]);
   const finish = useCallback(() => {
     const current = gesture.current;
     if (!current) return;
+    flushPoint();
     gesture.current = null;
+    setDragging(false);
     if (current.element.hasPointerCapture(current.pointer))
       current.element.releasePointerCapture(current.pointer);
     bridge.current?.command({ kind: "finish" }, model.current.snapshot());
     measure();
-  }, [measure]);
+  }, [measure, flushPoint]);
   const closeHex = useCallback(() => {
     hexInput.current?.blur();
     setHexOpen(false);
@@ -71,20 +115,25 @@ export function App() {
         finish();
         closeHex();
       }
-      // Only idle host edits may replace local intent.
+      // Only genuine idle host edits may replace local intent, never write echoes.
       if (acceptState && !gesture.current) {
+        motion.current?.dispose();
+        motion.current = null;
+        pointerPose.current = { sv: null, angle: null };
         model.current.state = message.state;
         setState(model.current.snapshot());
       }
     }, setSyncPhase);
     return () => {
+      motion.current?.dispose();
+      if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
       bridge.current?.dispose();
       bridge.current = null;
     };
   }, [closeHex, finish]);
   useLayoutEffect(() => {
     const observer = new ResizeObserver(measure);
-    if (work.current) observer.observe(work.current);
+    observer.observe(document.documentElement);
     window.addEventListener("resize", measure);
     measure();
     return () => {
@@ -93,8 +142,8 @@ export function App() {
     };
   }, [measure]);
   useEffect(() => {
-    if (canvas.current) drawPicker(canvas.current, dimension, activeHsv.h);
-  }, [dimension, activeHsv.h]);
+    if (canvas.current) drawPicker(canvas.current, dimension * scale, activeHsv.h);
+  }, [dimension, scale, activeHsv.h]);
   useEffect(() => {
     const blur = () => {
       finish();
@@ -118,23 +167,26 @@ export function App() {
       return;
     }
     event.preventDefault();
-    const { rect, region } = current;
-    const pos = {
+    const { rect } = current;
+    pendingPoint.current = {
       x: (event.clientX - rect.left) / rect.width,
       y: (event.clientY - rect.top) / rect.height,
     };
-    const hsv: HSV = { ...model.current.state.hsv[model.current.state.active] };
-    if (region === "ring") {
-      if (Math.hypot(pos.x - 0.5, pos.y - 0.5) < 0.08) return;
-      hsv.h = normalizedHue((Math.atan2(pos.x - 0.5, 0.5 - pos.y) * 180) / Math.PI + 45);
-      command({ kind: "hsv", value: hsv, final: false });
-    } else if (region === "diamond") {
-      command({ kind: "hsv", value: { ...hsv, ...pointToSv(pos, hsv.s) }, final: false });
-    } else {
-      const rgb = { ...model.current.state.colors[model.current.state.active] };
-      rgb[region] = Math.round(clamp(pos.x, 0, 1) * 255);
-      command({ kind: "rgb", value: rgb, final: false });
+    // Ease only the visual marker; color calculation keeps the exact pointer target.
+    if (current.region === "diamond") {
+      const point = constrainToDiamond(pendingPoint.current);
+      pointerPose.current.sv = point;
+      motion.current?.setSv(point);
+    } else if (current.region === "ring") {
+      const dx = pendingPoint.current.x - 0.5,
+        dy = 0.5 - pendingPoint.current.y;
+      if (Math.hypot(dx, dy) >= 0.08) {
+        const angle = Math.atan2(dx, dy);
+        pointerPose.current.angle = angle;
+        motion.current?.setAngle(angle);
+      }
     }
+    if (dragFrame.current === null) dragFrame.current = requestAnimationFrame(flushPoint);
   }
   function start(event: ReactPointerEvent<HTMLElement>, channel?: Channel) {
     if (event.button !== 0 || !connected) return;
@@ -148,17 +200,33 @@ export function App() {
     if (!region) return;
     event.preventDefault();
     closeHex();
+    const hsv = model.current.state.hsv[model.current.state.active];
+    const initial = {
+      sv: motion.current?.pose.sv ?? pointerPose.current.sv ?? hsvToPoint(hsv),
+      angle:
+        motion.current?.pose.angle ?? pointerPose.current.angle ?? ((hsv.h - 45) * Math.PI) / 180,
+    };
+    motion.current?.dispose();
+    if (svMarker.current && hueMarker.current)
+      motion.current = createCursorMotion(svMarker.current, hueMarker.current, initial);
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = { pointer: event.pointerId, rect, region, element: event.currentTarget };
+    setDragging(true);
     move(event);
+    flushPoint();
   }
   function select(swatch: Swatch) {
     finish();
     closeHex();
     command({ kind: "select", swatch });
   }
-  const pos = hsvToPoint(activeHsv);
-  const theta = ((activeHsv.h - 45) * Math.PI) / 180;
+  const pos = pointerPose.current.sv
+    ? (motion.current?.pose.sv ?? pointerPose.current.sv)
+    : hsvToPoint(activeHsv);
+  const theta =
+    pointerPose.current.angle !== null
+      ? (motion.current?.pose.angle ?? pointerPose.current.angle)
+      : ((activeHsv.h - 45) * Math.PI) / 180;
   const pointerHandlers = {
     onPointerMove: move,
     onPointerUp: finish,
@@ -166,7 +234,15 @@ export function App() {
     onLostPointerCapture: finish,
   };
   return (
-    <main className="app">
+    <main
+      className={`app${dragging ? " dragging" : ""}`}
+      style={{
+        width: frame.width,
+        height: frame.height,
+        fontSize: frame.fontSize,
+        transform: `scale(${scale})`,
+      }}
+    >
       <header className="controlbar">
         <fieldset className="swatches" aria-label="Foreground and background colors">
           {(["bg", "fg"] as const).map((swatch) => (
@@ -215,6 +291,17 @@ export function App() {
             <rect x="9" y="11" width="8" height="15" rx="4" transform="rotate(-25 13 18)" />
           </svg>
         </button>
+        <section className="color-info" aria-label="Hue, saturation and brightness">
+          <div>
+            H <span>{Math.round(activeHsv.h)}°</span>
+          </div>
+          <div>
+            S <span>{Math.round(activeHsv.s * 100)}%</span>
+          </div>
+          <div>
+            B <span>{Math.round(activeHsv.v * 100)}%</span>
+          </div>
+        </section>
         {hexOpen && (
           <form
             className="hex-popup"
@@ -252,7 +339,7 @@ export function App() {
           </form>
         )}
       </header>
-      <div className="work-area" ref={work}>
+      <div className="work-area">
         <div
           className="picker"
           data-testid="picker"
@@ -265,19 +352,19 @@ export function App() {
             {...pointerHandlers}
           />
           <div
+            ref={hueMarker}
             className="hue-cursor"
-            style={{ left: `${50 + Math.sin(theta) * 46}%`, top: `${50 - Math.cos(theta) * 46}%` }}
+            style={{
+              left: `${50 + Math.sin(theta) * 46}%`,
+              top: `${50 - Math.cos(theta) * 46}%`,
+              transform: `translate(-50%, -50%) rotate(${theta}rad)`,
+            }}
           />
-          <div className="sv-cursor" style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }} />
-          {dimension >= 195 && (
-            <div className="color-info">
-              HSB
-              <br />
-              H: {Math.round(activeHsv.h)}°<br />
-              S: {Math.round(activeHsv.s * 100)}%<br />
-              B: {Math.round(activeHsv.v * 100)}%
-            </div>
-          )}
+          <div
+            ref={svMarker}
+            className="sv-cursor"
+            style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
+          />
         </div>
         <section className="slider-area" aria-label="RGB sliders" style={{ width: railWidth }}>
           {channels.map((channel) => (

@@ -414,19 +414,51 @@ test("responsive vertical layout remains centered across panel sizes", async ({ 
     [2200, 2200],
   ]) {
     await page.setViewportSize({ width, height });
+    const scale = Math.min(width / 360, height / 480);
+    const fontSize = Math.max(12, 12 / scale);
+    const extraRows = Math.max(20, fontSize * 1.8) * 3 - 60;
+    const dimension = Math.floor(
+      Math.min(width / scale - 26, height / scale - 149 - extraRows, 480),
+    );
     await expect
       .poll(async () => {
         const picker = await page.getByTestId("picker").boundingBox();
         return picker.width;
       })
-      .toBe(Math.max(1, Math.floor(Math.min(width - 26, height - 149, 480))));
+      .toBeCloseTo(dimension * scale, 2);
     const picker = await page.getByTestId("picker").boundingBox();
     const sliders = await page.getByRole("region", { name: "RGB sliders" }).boundingBox();
     expect(Math.abs(picker.x + picker.width / 2 - width / 2)).toBeLessThan(1);
     expect(Math.abs(sliders.x + sliders.width / 2 - width / 2)).toBeLessThan(1);
-    expect(picker.width).toBe(picker.height);
+    expect(picker.width).toBeCloseTo(picker.height, 3);
     expect(sliders.y).toBeGreaterThanOrEqual(picker.y + picker.height);
     expect(sliders.y + sliders.height).toBeLessThanOrEqual(height);
+    const fonts = await page
+      .locator(".color-info, .slider-row > span, .slider-row output, .status")
+      .evaluateAll((elements) =>
+        elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+      );
+    for (const size of fonts) {
+      expect(size).toBeCloseTo(fontSize, 2);
+      expect(size * scale).toBeGreaterThanOrEqual(11.99);
+    }
+    const cursor = await page.locator(".sv-cursor").boundingBox();
+    const swatch = await page
+      .getByRole("button", { name: "Foreground color", exact: true })
+      .boundingBox();
+    expect(cursor.width).toBeCloseTo(16 * scale, 2);
+    expect(swatch.width).toBeCloseTo(33 * scale, 2);
+    const target = { x: picker.x + picker.width * 0.58, y: picker.y + picker.height * 0.48 };
+    await page.mouse.click(target.x, target.y);
+    await expect
+      .poll(async () => {
+        const selected = await page.locator(".sv-cursor").boundingBox();
+        return Math.hypot(
+          selected.x + selected.width / 2 - target.x,
+          selected.y + selected.height / 2 - target.y,
+        );
+      })
+      .toBeLessThan(1);
   }
 });
 
@@ -532,6 +564,83 @@ test("pointer capture, frozen resize coordinates, cancellation, and final flush"
   await expect
     .poll(async () => (await page.getByTestId("picker").boundingBox()).width)
     .not.toBe(picker.width);
+});
+
+test("dense pointer bursts keep only the newest position and remain still after release", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 310, height: 455 });
+  await expect
+    .poll(async () => (await page.getByTestId("picker").boundingBox()).width)
+    .toBeLessThan(310);
+  for (const region of ["diamond", "ring"]) {
+    const box = await page.getByTestId("picker").boundingBox();
+    await page.mouse.move(
+      box.x + box.width * 0.5,
+      box.y + box.height * (region === "ring" ? 0.04 : 0.5),
+    );
+    await page.mouse.down();
+    await expect(page.locator(".app")).toHaveClass(/dragging/);
+    const target = await page.locator(".picker-input").evaluate((element, kind) => {
+      const rect = element.getBoundingClientRect();
+      let point;
+      let maxError = 0;
+      for (let i = 0; i < 200; i++) {
+        const t = i / 199;
+        point =
+          kind === "ring"
+            ? { x: 0.5 + Math.sin(t * 1.2) * 0.46, y: 0.5 - Math.cos(t * 1.2) * 0.46 }
+            : { x: 0.3 + t * 0.4, y: 0.5 };
+        element.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            pointerId: 1,
+            buttons: 1,
+            clientX: rect.left + point.x * rect.width,
+            clientY: rect.top + point.y * rect.height,
+          }),
+        );
+        // The visual pose stays fixed within this input burst; colors can still
+        // take the exact newest target without waiting for the easing animation.
+        const marker = element.parentElement.querySelector(
+          kind === "ring" ? ".hue-cursor" : ".sv-cursor",
+        );
+        const bounds = marker.getBoundingClientRect();
+        maxError = Math.max(
+          maxError,
+          Math.hypot(
+            bounds.left + bounds.width / 2 - (rect.left + point.x * rect.width),
+            bounds.top + bounds.height / 2 - (rect.top + point.y * rect.height),
+          ),
+        );
+      }
+      return { x: rect.left + point.x * rect.width, y: rect.top + point.y * rect.height, maxError };
+    }, region);
+    expect(target.maxError).toBeGreaterThan(1);
+    await page.mouse.up();
+    await expect(page.locator(".app")).not.toHaveClass(/dragging/);
+    const marker = page.locator(region === "ring" ? ".hue-cursor" : ".sv-cursor");
+    await page.waitForTimeout(250);
+    await expect
+      .poll(async () => {
+        const bounds = await marker.boundingBox();
+        return Math.hypot(
+          bounds.x + bounds.width / 2 - target.x,
+          bounds.y + bounds.height / 2 - target.y,
+        );
+      })
+      .toBeLessThan(0.02);
+    const position = await marker.boundingBox();
+    expect(
+      Math.hypot(
+        position.x + position.width / 2 - target.x,
+        position.y + position.height / 2 - target.y,
+      ),
+    ).toBeLessThan(1);
+    await page.waitForTimeout(600);
+    expect(await marker.boundingBox()).toEqual(position);
+    expect(await page.evaluate(() => window.commands.at(-1).final)).toBe(true);
+  }
 });
 
 test("HEX editing, linking, swatch selection and stale host messages", async ({ page }) => {
