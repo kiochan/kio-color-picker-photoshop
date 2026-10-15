@@ -1,7 +1,4 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs"),
-  vm = require("node:vm"),
-  path = require("node:path");
 const C = require("../build/color/conversions.js"),
   G = require("../build/ui/geometry.js"),
   S = require("../build/color/state.js");
@@ -81,125 +78,7 @@ function host(mapColor = (c) => c) {
     },
   };
 }
-const flush = async () => {
-  for (let i = 0; i < 20; i++) await Promise.resolve();
-};
-function harness(storage = {}, mapColor) {
-  const ps = host(mapColor),
-    elements = {},
-    timers = new Map();
-  let tick = 0,
-    lifecycle;
-  function element(id) {
-    return {
-      id,
-      style: {},
-      value: "",
-      textContent: "",
-      classList: { toggle() {}, add() {}, remove() {} },
-      listeners: {},
-      clientWidth: 296,
-      clientHeight: 390,
-      offsetHeight: 69,
-      setAttribute() {},
-      addEventListener(k, fn) {
-        this.listeners[k] ||= [];
-        this.listeners[k].push(fn);
-      },
-      emit(k, e = {}) {
-        for (const fn of this.listeners[k] || [])
-          fn(
-            Object.assign(
-              { button: 0, buttons: 1, clientX: 150, clientY: 80, preventDefault() {} },
-              e,
-            ),
-          );
-      },
-      getBoundingClientRect() {
-        return { left: 0, top: 0, width: 200, height: 200 };
-      },
-      querySelector() {
-        return element("track");
-      },
-      focus() {
-        doc.activeElement = this;
-      },
-      blur() {
-        if (doc.activeElement === this) doc.activeElement = null;
-      },
-      select() {},
-    };
-  }
-  const doc = element("document");
-  doc.readyState = "complete";
-  doc.activeElement = null;
-  doc.documentElement = element("html");
-  doc.getElementById = (id) => (elements[id] ||= element(id));
-  doc.querySelector = () => doc.getElementById("slider-area");
-  const win = element("window");
-  win.innerWidth = 310;
-  win.innerHeight = 455;
-  const context = vm.createContext({
-    console,
-    localStorage: {
-      getItem: (k) => storage[k] ?? null,
-      setItem: (k, v) => {
-        storage[k] = v;
-      },
-    },
-    document: doc,
-    window: win,
-    setTimeout: (fn) => {
-      timers.set(++tick, fn);
-      return tick;
-    },
-    clearTimeout: (id) => timers.delete(id),
-    setInterval: () => 999,
-    clearInterval() {},
-  });
-  const modules = new Map();
-  const mainFile = path.resolve(__dirname, "../build/main.js");
-  function load(file) {
-    if (modules.has(file)) return modules.get(file).exports;
-    const module = { exports: {} };
-    modules.set(file, module);
-    const localRequire = (name) =>
-      name === "photoshop"
-        ? ps
-        : name === "uxp"
-          ? {
-              entrypoints: {
-                setup(v) {
-                  lifecycle = v.panels.pickerPanel;
-                },
-              },
-            }
-          : load(path.resolve(path.dirname(file), name));
-    let source = fs.readFileSync(file, "utf8");
-    if (file === mainFile)
-      source +=
-        "\n globalThis.testApi={get colors(){return colors;},get hsv(){return preciseHsv;},get drag(){return drag;},setSelectedHsv,setSelectedRgb,selectColor,syncFromPhotoshop};";
-    const factory = vm.runInContext(`(function(require,module,exports){${source}\n})`, context, {
-      filename: file,
-    });
-    factory(localRequire, module, module.exports);
-    return module.exports;
-  }
-  load(path.resolve(__dirname, "../main.js"));
-  return {
-    ps,
-    elements,
-    doc,
-    win,
-    lifecycle,
-    api: context.testApi,
-    tick() {
-      const fns = [...timers.values()];
-      timers.clear();
-      for (const fn of fns) fn();
-    },
-  };
-}
+
 async function run() {
   const results = [];
   async function test(name, fn) {
@@ -235,7 +114,7 @@ async function run() {
     for (let s = 0; s <= 100; s++)
       for (let v = 0; v <= 100; v++) {
         const p = G.hsvToPoint({ s: s / 100, v: v / 100 }),
-          h = G.pointToSv(p);
+          h = G.pointToSv(p, s / 100);
         assert.ok(Math.abs(h.s - s / 100) < 1e-12);
         assert.ok(Math.abs(h.v - v / 100) < 1e-12);
       }
@@ -246,74 +125,27 @@ async function run() {
       }
     assert.equal(G.pickerRegion({ x: 0.5, y: 0.04 }), "ring");
     assert.equal(G.pickerRegion({ x: 0.5, y: 0.5 }), "diamond");
-  });
-  await test("Drawn 45-degree diamond gradients match HSV and pointer coordinates", () => {
-    const css = fs.readFileSync(path.join(__dirname, "../styles.css"), "utf8");
-    const rule = /\.diamond\s*\{([^}]+)\}/.exec(css)[1];
-    assert.ok(!/transform\s*:/.test(rule), "Diamond must not depend on UXP CSS rotation");
-    const percent = (name) =>
-      Number(new RegExp(`(?:^|;)\\s*${name}:\\s*([\\d.]+)%`).exec(rule)[1]) / 100;
-    const width = percent("width"),
-      height = percent("height"),
-      left = percent("left"),
-      top = percent("top");
-    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-    function gradient(file, value) {
-      assert.ok(html.includes(`src="assets/${file}"`), "UI must load tested PNG assets");
-      const png = fs.readFileSync(path.join(__dirname, "../assets", file));
-      assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-      const size = png.readUInt32BE(16);
-      assert.equal(png.readUInt32BE(20), size);
-      assert.equal(png[24], 8);
-      assert.equal(png[25], 6); // RGBA, including real alpha pixels.
-      const data = [];
-      for (let offset = 8; offset < png.length; ) {
-        const length = png.readUInt32BE(offset);
-        if (png.toString("ascii", offset + 4, offset + 8) === "IDAT")
-          data.push(png.subarray(offset + 8, offset + 8 + length));
-        offset += length + 12;
-      }
-      const pixels = require("node:zlib").inflateSync(Buffer.concat(data));
-      const stride = 1 + size * 4;
-      assert.equal(pixels.length, stride * size);
-      for (let y = 0; y < size; y++) assert.equal(pixels[y * stride], 0);
-      return (x, y) => {
-        const ix = C.clamp(Math.floor(x * size), 0, size - 1);
-        const iy = C.clamp(Math.floor(y * size), 0, size - 1);
-        const offset = iy * stride + 1 + ix * 4;
-        assert.deepEqual([...pixels.subarray(offset, offset + 3)], [value, value, value]);
-        return pixels[offset + 3] / 255;
-      };
-    }
-    const white = gradient("sv-white.png", 255),
-      black = gradient("sv-black.png", 0);
-    for (const [s, v, x, y] of [
-      [0, 1, 0.5, 0.12],
-      [1, 1, 0.88, 0.5],
-      [1, 0, 0.5, 0.88],
-      [0, 0, 0.12, 0.5],
+    for (const [point, expected] of [
+      [
+        { x: 0.5, y: 0.12 },
+        { r: 255, g: 255, b: 255 },
+      ],
+      [
+        { x: 0.12, y: 0.5 },
+        { r: 128, g: 128, b: 128 },
+      ],
+      [
+        { x: 0.88, y: 0.5 },
+        { r: 255, g: 0, b: 0 },
+      ],
+      [
+        { x: 0.5, y: 0.88 },
+        { r: 0, g: 0, b: 0 },
+      ],
     ]) {
-      const point = G.hsvToPoint({ s, v });
-      assert.ok(Math.abs(point.x - x) < 1e-12 && Math.abs(point.y - y) < 1e-12);
+      const hsv = G.pointToSv(point);
+      assert.deepEqual(C.hsvToRgb(0, hsv.s, hsv.v), expected);
     }
-    for (const hue of [0, 93, 241])
-      for (let s = 0; s <= 10; s++)
-        for (let v = 0; v <= 10; v++) {
-          const hsv = { h: hue, s: s / 10, v: v / 10 },
-            point = G.hsvToPoint(hsv);
-          const x = (point.x - left) / width,
-            y = (point.y - top) / height;
-          const wa = white(x, y),
-            ba = black(x, y),
-            base = C.hsvToRgb(hue, 1, 1),
-            expected = C.hsvToRgb(hue, hsv.s, hsv.v);
-          for (const key of ["r", "g", "b"])
-            assert.ok(
-              Math.abs(Math.round((base[key] * (1 - wa) + 255 * wa) * (1 - ba)) - expected[key]) <=
-                1,
-              JSON.stringify({ hsv, x, y, wa, ba, key, base, expected }),
-            );
-        }
   });
   await test("Bidirectional linked offsets wrap and retain unclipped relation", () => {
     const a = { h: 350, s: 0.2, v: 0.4 },
@@ -371,123 +203,6 @@ async function run() {
     assert.equal(sync.busy, false);
     await sync.write({ fg: { r: 2, g: 2, b: 2 } });
     assert.equal(sync.read().fg.r, 2);
-  });
-  await test("Continuous drag writes before mouseup and cancellation stops stale moves", async () => {
-    const h = harness();
-    h.elements.picker.emit("mousedown", { clientX: 100, clientY: 10 });
-    h.tick();
-    await flush();
-    assert.ok(h.ps.writes > 0);
-    h.doc.emit("mousemove", { clientX: 190, clientY: 100 });
-    h.tick();
-    await flush();
-    const n = h.ps.writes;
-    assert.ok(n > 1);
-    h.doc.emit("pointercancel");
-    await flush();
-    assert.equal(h.api.drag, null);
-    h.doc.emit("mousemove", { clientX: 100, clientY: 190 });
-    await flush();
-    assert.equal(h.ps.writes, n);
-    h.elements.picker.emit("mousedown", { clientX: 100, clientY: 10 });
-    h.doc.emit("mousemove", { buttons: 0 });
-    assert.equal(h.api.drag, null);
-  });
-  await test("Own notifications and forced refresh preserve exact black HSB", async () => {
-    const h = harness();
-    h.api.setSelectedHsv({ h: 281.234, s: 0.6789, v: 0 }, true);
-    await flush();
-    h.api.syncFromPhotoshop(true);
-    assert.ok(Math.abs(h.api.hsv.fg.h - 281.234) < 1e-10);
-    assert.equal(h.api.hsv.fg.s, 0.6789);
-    assert.equal(h.ps.writes, 1);
-    h.ps.external("bg", { r: 22, g: 33, b: 44 });
-    assert.equal(h.api.hsv.fg.s, 0.6789);
-    assert.equal(h.api.colors.bg.r, 22);
-  });
-  await test("External BG edits update linked FG even with foreground selected", async () => {
-    const h = harness();
-    h.elements["link-colors"].emit("click");
-    h.ps.external("bg", { r: 60, g: 150, b: 200 });
-    await flush();
-    assert.ok(h.ps.writes > 0);
-    const n = h.ps.writes;
-    h.api.syncFromPhotoshop();
-    await flush();
-    assert.equal(h.ps.writes, n);
-  });
-  await test("HEX rejects invalid input; picker and hide release text focus", async () => {
-    const h = harness();
-    h.elements.foreground.emit("dblclick");
-    assert.equal(h.doc.activeElement, h.elements["hex-input"]);
-    h.elements["hex-input"].value = "bad";
-    h.elements["hex-input"].emit("keydown", { key: "Enter" });
-    assert.equal(h.ps.writes, 0);
-    h.elements["hex-input"].value = "#000000";
-    h.elements["hex-input"].emit("keydown", { key: "Enter" });
-    await flush();
-    assert.equal(h.doc.activeElement, null);
-    assert.equal(h.api.colors.fg.r, 0);
-    h.elements.foreground.emit("dblclick");
-    h.elements.picker.emit("mousedown", { clientX: 100, clientY: 10 });
-    assert.equal(h.doc.activeElement, null);
-    h.lifecycle.hide();
-    assert.equal(h.api.drag, null);
-  });
-  await test("Link preference survives reload in both directions", async () => {
-    const storage = {},
-      first = harness(storage);
-    first.elements["link-colors"].emit("click");
-    assert.equal(storage["kio.linked"], "true");
-    const second = harness(storage);
-    second.api.setSelectedHsv({ h: 120, s: 0.7, v: 0.8 }, true);
-    await flush();
-    assert.equal(second.ps.writes, 2);
-    second.elements["link-colors"].emit("click");
-    assert.equal(storage["kio.linked"], "false");
-    const third = harness(storage);
-    third.api.setSelectedHsv({ h: 180, s: 0.8, v: 0.7 }, true);
-    await flush();
-    assert.equal(third.ps.writes, 1);
-  });
-  await test("Diamond drag keeps its coordinate frame across layout notifications", async () => {
-    const h = harness();
-    h.elements.picker.emit("mousedown", { clientX: 120, clientY: 110 });
-    const before = { ...h.api.hsv.fg };
-    h.elements.picker.getBoundingClientRect = () => ({
-      left: 20,
-      top: 30,
-      width: 140,
-      height: 140,
-    });
-    h.win.emit("resize");
-    h.tick();
-    await flush();
-    h.doc.emit("mousemove", { clientX: 120, clientY: 110 });
-    assert.equal(h.api.hsv.fg.s, before.s);
-    assert.equal(h.api.hsv.fg.v, before.v);
-    h.doc.emit("mouseup");
-    await flush();
-  });
-  await test("Color-managed write echoes do not cause linked feedback or cursor jumps", async () => {
-    const h = harness({ "kio.linked": "true" }, (c) => {
-      c.rgb.red = Math.min(255, c.rgb.red + 1);
-      return c;
-    });
-    h.api.setSelectedHsv({ h: 21, s: 0.654321, v: 0.765432 }, true);
-    await flush();
-    const writes = h.ps.writes;
-    for (let i = 0; i < 5; i++) {
-      h.api.syncFromPhotoshop();
-      await flush();
-    }
-    h.api.syncFromPhotoshop(true);
-    assert.equal(h.ps.writes, writes);
-    assert.equal(h.api.hsv.fg.s, 0.654321);
-    assert.equal(h.api.hsv.fg.v, 0.765432);
-    h.ps.external("bg", { r: 40, g: 100, b: 200 });
-    await flush();
-    assert.ok(h.ps.writes > writes);
   });
   return results;
 }

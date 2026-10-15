@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Match the reference diamond: white at top, neutral gray at left, pure hue at right, black at bottom; keep Canvas colors and pointer mapping aligned.
+- Move the interface to an offline local WebView with React and TypeScript. Draw the wheel and diamond on Canvas; keep Photoshop synchronization and settings in UXP behind a validated message bridge.
+- Add browser tests for actual gradient pixels, edge transparency, responsive layout, pointer capture, and HEX editing.
+
 ## 0.3.1
 
 - Replace unsupported SVG diamond gradients with transparent PNGs to fix the solid black picker in Photoshop.

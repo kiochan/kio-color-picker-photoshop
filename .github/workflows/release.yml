@@ -26,6 +26,8 @@ jobs:
         if: github.ref_type == 'tag'
         run: node scripts/release-meta.js
       - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
       - run: npm run stage
       - name: Check out official Adobe CLI
         uses: actions/checkout@v6

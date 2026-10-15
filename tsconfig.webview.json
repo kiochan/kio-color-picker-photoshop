@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "types": ["react", "react-dom"],
+    "jsx": "react-jsx",
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "webview/**/*.ts",
+    "webview/**/*.tsx",
+    "src/color/**/*.ts",
+    "src/picker/**/*.ts",
+    "src/bridge/protocol.ts",
+    "src/ui/geometry.ts",
+    "src/ui/types.ts"
+  ]
+}

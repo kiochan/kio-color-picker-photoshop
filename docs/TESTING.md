@@ -1,9 +1,9 @@
 # Photoshop 27.2 / Windows 11 acceptance checklist
 
-Status: **all host checks below pending**. Record date, Windows build, Photoshop full version, UXP/UDT version, display scaling, input device and document color profile for each run. Automated tests do not replace this list.
+Status: **all host checks for the WebView migration below pending**. Record date, Windows build, Photoshop full version, UXP/UDT version, display scaling, input device and document color profile for each run. Automated tests do not replace this list.
 
 1. Run npm ci, npm test and npm run check. Tests compile the TypeScript source first. Enable Photoshop developer mode; add root manifest in UDT, Load, open panel. Check console for loading/API/CSS errors. Repeat with no document, RGB 8/16-bit documents and a CMYK document; record profile conversions separately from numeric RGB expectation.
-2. In dark theme verify circular ring and diamond with no square bleed. Check top white, right pure hue, lower-left edge black. At R=142/G=41/B=36 check ramp endpoints R #002924→#FF2924, G #8E0024→#8EFF24, B #8E2900→#8E29FF. Compare visible hue-ring colors with selector at red/green/blue/yellow; raster orientation is not covered by math tests.
+2. In dark theme verify circular ring and diamond with no square bleed. Check top white, left neutral gray, right pure hue, bottom black. At R=142/G=41/B=36 check ramp endpoints R #002924→#FF2924, G #8E0024→#8EFF24, B #8E2900→#8E29FF. Compare visible hue-ring colors with selector at red/green/blue/yellow; confirm the local WebView loads offline.
 3. Drag ring continuously for 10 seconds: foreground updates while held, no modal/error flood. Drag beyond ring and panel; release outside, return without buttons: no stale movement. Repeat diamond, RGB, pointer cancellation and switching applications during drag. Repeat with tablet/stylus if available.
 4. Visit every diamond corner and edge, then drag outwards. Enter #202020, #000000, #FFFFFF and near-black saturated colors via HEX. Pointer must match color. At black move along black edge, change hue, hide/show panel, then raise brightness: latent H/S should remain stable until replaced by a meaningful external color.
 5. Edit each swatch unlinked; other Photoshop color must stay untouched. Change FG/BG through native picker and eyedropper; verify panel updates. Press X and D outside text input; verify both swatches. While dragging one swatch, alter the other via a test host action if possible; ensure it is not overwritten by stale cache.
@@ -17,6 +17,8 @@ Status: **all host checks below pending**. Record date, Windows build, Photoshop
 
 ## Automated coverage
 
-The 15 plugin suites exercise compiled CommonJS modules through the real root loader and cover RGB/HSV conversions, hue wrapping, diamond boundaries, actual PNG gradient pixels, RGB ramps, linked colors, drag coordinates, host synchronization, preference persistence, and focus cleanup. Separate release tests cover tags, CCX contents, and packaging errors. Staging checks verify the compiled file allowlist and SHA-256 records. Strict TypeScript checks use separate UXP and Node configurations; Biome checks source formatting and lint rules.
+Run `npm test` and `npm run check` for color/geometry logic, linked state, host write serialization, persisted settings, message validation, stale sessions/sequences, modal recovery, strict UXP/browser/Node typing, and Biome.
 
-The mock DOM and Chromium rendering check do not establish Photoshop UXP compatibility. In Photoshop, also verify the link toggle survives restart, the diamond stays at 45 degrees while dragging and resizing, and cursors remain visible on white, black, and saturated colors.
+Run `npx playwright install chromium` once, then `npm run test:browser` after building. Chromium at 1×/2× scaling checks actual Canvas pixels against HSV, the right-edge transparency, responsive layout, pointer capture, frozen drag coordinates, HEX editing, swatch/link actions, and stale/untrusted messages. `npm run stage` verifies bundled runtime files and SHA-256 records.
+
+The browser bridge is mocked. Photoshop WebView loading, real message origins, host synchronization, keyboard focus and installation remain host checks. Verify shortcuts after each interaction and the link setting after restarting Photoshop.

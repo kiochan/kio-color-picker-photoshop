@@ -1,5 +1,6 @@
 node_modules/
 build/
+.dev/
 .npm-cache/
 dist/
 .audit/
@@ -15,6 +16,8 @@ Thumbs.db
 *.pem
 *.key
 coverage/
+test-results/
+playwright-report/
 .vscode/
 .idea/
 .codex/

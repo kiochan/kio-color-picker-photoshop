@@ -9,7 +9,7 @@ npm test
 npm run check
 ```
 
-Edit TypeScript in `src/`; use `npm run watch` for compilation and `npm run format` for Biome formatting. Build before loading the plugin. Keep UXP globals separate from Node tooling types; SDK declaration gaps are isolated in `src/uxp-compat.d.ts` and the UI entrypoint adapter.
+Edit the UXP host/shared logic in `src/` and React UI in `webview/`; `npm run watch` builds both. Run `npx playwright install chromium` once, then `npm run test:browser` after building UI changes. Use `npm run format` for Biome. Keep UXP, browser, and Node types separate. SDK declaration gaps are isolated in `src/uxp-compat.d.ts`.
 
 For bug reports, include your Photoshop version, steps to reproduce, expected behavior, and relevant screenshots or errors. Remove private information.
 

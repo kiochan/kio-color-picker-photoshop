@@ -4,7 +4,7 @@ A lightweight Photoshop color picker with a hue wheel, saturation/brightness dia
 
 ## Install
 
-Requires Windows 11 and Photoshop 2026 (27.x).
+Requires Windows 11, Photoshop 2026 (27.x), and Adobe UXP WebView Support.
 
 Download the `.ccx` from [Releases](https://github.com/kiochan/kio-color-picker-photoshop/releases/latest), install through Creative Cloud Desktop, and open **Plugins → Kio Color Picker** in Photoshop.
 
@@ -28,6 +28,6 @@ npm run check
 npm run stage
 ```
 
-`src/` uses strict TypeScript with Adobe API types. Biome handles formatting and linting. Use `npm run watch` while developing and `npm run format` to apply formatting. Only compiled JavaScript and runtime assets are packaged.
+`src/` contains the UXP host and shared color logic; `webview/` is the local React + TypeScript interface. The picker draws on Canvas and runs offline. Biome handles formatting and linting. Use `npm run watch` to compile both layers and `npm run format` to format source. Browser checks: `npx playwright install chromium`, then `npm run test:browser` after building. Only compiled code, styles, and runtime resources are packaged.
 
 [CI and release instructions](docs/CI.md) · [MIT License](LICENSE)

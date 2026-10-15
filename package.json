@@ -5,12 +5,13 @@
   "description": "Lightweight Photoshop UXP color picker",
   "license": "MIT",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json",
+    "build": "tsc -p tsconfig.json && node scripts/build-webview.js",
+    "watch": "node scripts/build-webview.js --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.tools.json",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "npm run build && node tests/run.js && node tests/release.js && node tests/package-ccx.js",
+    "test": "npm run build && node tests/run.js && node tests/bridge.js && node tests/shell.js && node tests/release.js && node tests/package-ccx.js",
+    "test:browser": "playwright test",
     "check": "npm run typecheck && npm run lint && node scripts/check.js",
     "stage": "npm run build && node scripts/stage.js && node tests/stage.js"
   },
@@ -20,8 +21,16 @@
   "devDependencies": {
     "@adobe/cc-ext-uxp-types": "7.3.1",
     "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.1",
     "@types/node": "26.6.5",
     "@types/photoshop": "27.11.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }

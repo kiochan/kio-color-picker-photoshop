@@ -12,13 +12,15 @@ const runtime = [
   "build/color/conversions.js",
   "build/color/state.js",
   "build/color/types.js",
-  "build/ui/geometry.js",
-  "build/ui/elements.js",
+  "build/picker/model.js",
+  "build/bridge/protocol.js",
+  "build/bridge/controller.js",
   "build/photoshop/color-sync.js",
-  "assets/hue-ring.png",
-  "assets/sv-white.png",
-  "assets/sv-black.png",
-  "assets/sv-matte.svg",
+  "build/webview/index.html",
+  "build/webview/app.js",
+  "build/webview/app.css",
+  "build/webview/app.js.LEGAL.txt",
+  "build/webview/THIRD_PARTY_LICENSES.txt",
   "icons/panel.png",
   "icons/panel@2x.png",
   "icons/plugin.png",
@@ -35,6 +37,14 @@ function check() {
   )
     throw Error("Unexpected UXP configuration");
   if (manifest.id !== "com.kiochan.colorpicker") throw Error("Unexpected plugin ID");
+  const permissions = manifest.requiredPermissions?.webview;
+  if (
+    permissions?.allowLocalRendering !== "yes" ||
+    permissions?.enableMessageBridge !== "localOnly" ||
+    !Array.isArray(permissions.domains) ||
+    permissions.domains.length !== 0
+  )
+    throw Error("Expected offline local WebView permissions");
   for (const name of runtime) {
     const p = path.join(root, name);
     if (!fs.existsSync(p)) throw Error(`Missing ${name}`);
@@ -51,10 +61,19 @@ function check() {
       )
         throw Error(`Icon dimensions: ${p}`);
     }
-  for (const match of fs
-    .readFileSync(path.join(root, "index.html"), "utf8")
-    .matchAll(/(?:src|href)="([^"]+)"/g))
-    if (!runtime.includes(match[1])) throw Error(`HTML resource not staged: ${match[1]}`);
+  for (const html of ["index.html", "build/webview/index.html"])
+    for (const match of fs
+      .readFileSync(path.join(root, html), "utf8")
+      .matchAll(/(?:src|href)="([^"]+)"/g)) {
+      const source = match[1];
+      const resolved = source.startsWith("plugin:/")
+        ? source.slice(8)
+        : path
+            .relative(root, path.resolve(root, path.dirname(html), source))
+            .split(path.sep)
+            .join("/");
+      if (!runtime.includes(resolved)) throw Error(`HTML resource not staged: ${source}`);
+    }
   for (const name of runtime.filter((n) => n.endsWith(".js")))
     for (const match of fs
       .readFileSync(path.join(root, name), "utf8")

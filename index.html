@@ -1,54 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css" />
-  <script src="main.js"></script>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="styles.css" />
+<script src="main.js"></script>
 </head>
 <body>
-  <main id="app" class="app">
-    <section class="controlbar">
-      <div class="swatches" role="group" aria-label="Foreground and background colors">
-        <div id="background" class="swatch-background" title="Background color: click to edit" role="button" aria-label="Edit background color"></div>
-        <div id="foreground" class="swatch-foreground selected" title="Foreground color: click to edit" role="button" aria-label="Edit foreground color"></div>
-      </div>
-      <div id="link-colors" class="link-control" title="Link FG and BG colors (keep their H/S/B differences)" role="button" aria-label="Link foreground/background colors" aria-pressed="false">
-        <span class="chain-a"></span><span class="chain-b"></span>
-      </div>
-      <div id="hex-box" class="hex-popup hidden">
-        <label for="hex-input">HEX</label><input id="hex-input" type="text" maxlength="7" spellcheck="false" value="#8E2924" />
-        <span class="hex-close" id="hex-close" title="Close HEX editor">×</span>
-      </div>
-    </section>
-
-    <div class="work-area" id="work-area">
-    <div id="picker-stage" class="picker-stage">
-    <div id="picker" class="picker" title="Hue ring + saturation/brightness diamond">
-      <div class="diamond" id="diamond">
-        <div id="diamond-hue" class="diamond-hue"></div>
-        <img src="assets/sv-white.png" class="diamond-layer" alt="" draggable="false" />
-        <img src="assets/sv-black.png" class="diamond-layer" alt="" draggable="false" />
-        <img src="assets/sv-matte.svg" class="diamond-layer" alt="" draggable="false" />
-      </div>
-      <img src="assets/hue-ring.png" class="ring" alt="Color wheel" draggable="false" />
-      <div id="hue-cursor" class="hue-cursor"><span class="cursor-inner"></span></div>
-      <div id="sv-cursor" class="sv-cursor"><span class="cursor-inner"></span></div>
-      <div class="color-info"><div class="info-heading">HSB</div>
-        <div class="info-readout"><span class="info-copy">▢</span>
-          <div><div id="h-info">H: 3°</div><div id="s-info">S: 75%</div><div id="v-info">B: 56%</div></div>
-        </div>
-      </div>
-    </div>
-
-    </div>
-    <section class="slider-area" aria-label="RGB sliders">
-      <div class="slider-row" id="slider-red" data-channel="r" title="Red channel"><div class="slider-track red" id="track-r"><div id="marker-r" class="slider-marker"></div></div><div class="slider-number" id="value-r">142</div></div>
-      <div class="slider-row" id="slider-green" data-channel="g" title="Green channel"><div class="slider-track green" id="track-g"><div id="marker-g" class="slider-marker"></div></div><div class="slider-number" id="value-g">41</div></div>
-      <div class="slider-row" id="slider-blue" data-channel="b" title="Blue channel"><div class="slider-track blue" id="track-b"><div id="marker-b" class="slider-marker"></div></div><div class="slider-number" id="value-b">36</div></div>
-    </section>
-    </div>
-    <div id="status" role="status" class="status"></div>
-  </main>
+<webview id="picker-webview" width="100%" height="100%" src="plugin:/build/webview/index.html"></webview>
+<div id="load-status" role="status"></div>
 </body>
 </html>
