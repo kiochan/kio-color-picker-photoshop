@@ -22,6 +22,12 @@ Use Node.js 22+. Install dependencies and build before loading `manifest.json` i
 
 ```sh
 npm ci
+npm run dev
+```
+
+Open `http://127.0.0.1:5173` for a live browser preview with simulated colors. Edits reload automatically; this preview does not connect to Photoshop.
+
+```sh
 npm run build
 npm test
 npm run check

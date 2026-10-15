@@ -5,6 +5,7 @@
 - Match the reference diamond: white at top, neutral gray at left, pure hue at right, black at bottom; keep Canvas colors and pointer mapping aligned.
 - Move the interface to an offline local WebView with React and TypeScript. Draw the wheel and diamond on Canvas; keep Photoshop synchronization and settings in UXP behind a validated message bridge.
 - Add browser tests for actual gradient pixels, edge transparency, responsive layout, pointer capture, and HEX editing.
+- Add `npm run dev` for a live browser preview with simulated colors, saved preview state, and automatic reload.
 
 ## 0.3.1
 
