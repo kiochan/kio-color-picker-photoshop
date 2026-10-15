@@ -1,15 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
-- Migrate runtime code to strict TypeScript with Adobe API types; add Biome and locked development dependencies. Compile and test CommonJS output before CI packaging.
-
-- Fix the 45-degree diamond display and color mapping.
-- Refine selection cursors with thinner black borders.
-- Simplify project documentation.
+- Replace unsupported SVG diamond gradients with transparent PNGs to fix the solid black picker in Photoshop.
+- Clip the diamond's square color base to prevent colored seams at the overlay edges.
 
 ## 0.3.0
 
+- Migrate runtime code to strict TypeScript with Adobe API types; add Biome and locked development dependencies. Compile and test CommonJS output before CI packaging.
+- Fix the 45-degree diamond display and color mapping.
+- Refine selection cursors with thinner black borders.
+- Simplify project documentation.
 - Rename to Kio Color Picker with plugin ID `com.kiochan.colorpicker`.
 - Improve color mapping, dragging, host synchronization, and keyboard focus cleanup.
 - Save the foreground/background link setting and improve cursor visibility.

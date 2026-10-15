@@ -192,6 +192,9 @@ body {
   height: 76%;
   left: 12%;
   top: 12%;
+  /* Clip the square hue base at rounded SVG image edges; the whole diamond fits inside. */
+  border-radius: 50%;
+  overflow: hidden;
   z-index: 2;
   pointer-events: none;
 }

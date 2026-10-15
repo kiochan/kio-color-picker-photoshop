@@ -17,6 +17,6 @@ Status: **all host checks below pending**. Record date, Windows build, Photoshop
 
 ## Automated coverage
 
-The 15 plugin suites exercise compiled CommonJS modules through the real root loader and cover RGB/HSV conversions, hue wrapping, diamond boundaries, rendered SVG gradient mapping, RGB ramps, linked colors, drag coordinates, host synchronization, preference persistence, and focus cleanup. Separate release tests cover tags, CCX contents, and packaging errors. Staging checks verify the compiled file allowlist and SHA-256 records. Strict TypeScript checks use separate UXP and Node configurations; Biome checks source formatting and lint rules.
+The 15 plugin suites exercise compiled CommonJS modules through the real root loader and cover RGB/HSV conversions, hue wrapping, diamond boundaries, actual PNG gradient pixels, RGB ramps, linked colors, drag coordinates, host synchronization, preference persistence, and focus cleanup. Separate release tests cover tags, CCX contents, and packaging errors. Staging checks verify the compiled file allowlist and SHA-256 records. Strict TypeScript checks use separate UXP and Node configurations; Biome checks source formatting and lint rules.
 
 The mock DOM and Chromium rendering check do not establish Photoshop UXP compatibility. In Photoshop, also verify the link toggle survives restart, the diamond stays at 45 degrees while dragging and resizing, and cursors remain visible on white, black, and saturated colors.

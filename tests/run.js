@@ -257,23 +257,36 @@ async function run() {
       height = percent("height"),
       left = percent("left"),
       top = percent("top");
-    function gradient(file) {
-      const svg = fs.readFileSync(path.join(__dirname, "../assets", file), "utf8");
-      assert.match(svg, /points="500,0 1000,500 500,1000 0,500"/);
-      const values = ["x1", "y1", "x2", "y2"].map((k) =>
-        Number(new RegExp(`${k}="([\\d.]+)"`).exec(svg)[1]),
-      );
-      const alpha = [...svg.matchAll(/stop-opacity="([\d.]+)"/g)].map((m) => Number(m[1]));
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    function gradient(file, value) {
+      assert.ok(html.includes(`src="assets/${file}"`), "UI must load tested PNG assets");
+      const png = fs.readFileSync(path.join(__dirname, "../assets", file));
+      assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+      const size = png.readUInt32BE(16);
+      assert.equal(png.readUInt32BE(20), size);
+      assert.equal(png[24], 8);
+      assert.equal(png[25], 6); // RGBA, including real alpha pixels.
+      const data = [];
+      for (let offset = 8; offset < png.length; ) {
+        const length = png.readUInt32BE(offset);
+        if (png.toString("ascii", offset + 4, offset + 8) === "IDAT")
+          data.push(png.subarray(offset + 8, offset + 8 + length));
+        offset += length + 12;
+      }
+      const pixels = require("node:zlib").inflateSync(Buffer.concat(data));
+      const stride = 1 + size * 4;
+      assert.equal(pixels.length, stride * size);
+      for (let y = 0; y < size; y++) assert.equal(pixels[y * stride], 0);
       return (x, y) => {
-        const [x1, y1, x2, y2] = values,
-          dx = x2 - x1,
-          dy = y2 - y1;
-        const t = C.clamp(((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy), 0, 1);
-        return alpha[0] + t * (alpha[1] - alpha[0]);
+        const ix = C.clamp(Math.floor(x * size), 0, size - 1);
+        const iy = C.clamp(Math.floor(y * size), 0, size - 1);
+        const offset = iy * stride + 1 + ix * 4;
+        assert.deepEqual([...pixels.subarray(offset, offset + 3)], [value, value, value]);
+        return pixels[offset + 3] / 255;
       };
     }
-    const white = gradient("sv-white.svg"),
-      black = gradient("sv-black.svg");
+    const white = gradient("sv-white.png", 255),
+      black = gradient("sv-black.png", 0);
     for (const [s, v, x, y] of [
       [0, 1, 0.5, 0.12],
       [1, 1, 0.88, 0.5],
@@ -288,8 +301,8 @@ async function run() {
         for (let v = 0; v <= 10; v++) {
           const hsv = { h: hue, s: s / 10, v: v / 10 },
             point = G.hsvToPoint(hsv);
-          const x = ((point.x - left) / width) * 1000,
-            y = ((point.y - top) / height) * 1000;
+          const x = (point.x - left) / width,
+            y = (point.y - top) / height;
           const wa = white(x, y),
             ba = black(x, y),
             base = C.hsvToRgb(hue, 1, 1),
