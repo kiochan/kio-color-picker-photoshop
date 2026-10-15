@@ -9,11 +9,11 @@
 1. Keep `manifest.json` and `package.json` versions equal. Update `CHANGELOG.md`.
 2. Run `npm ci`, `npm test` and `npm run check`, then complete the [Photoshop test checklist](TESTING.md).
 3. Commit and push the changes. Use a manual Release run to check the installer.
-4. Create and push a new version tag matching both version files. For example, for 0.3.1:
+4. Create and push a new version tag matching both version files. For example, for 0.4.0:
 
 ```sh
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 Release assets include the CCX, SHA-256 checksum, and build provenance. The workflow uses the built-in `GITHUB_TOKEN`; no personal token is required. Existing releases and published tags are not overwritten.
