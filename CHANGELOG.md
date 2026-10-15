@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Keep local color intent stable through delayed or lost messages; confirm successful Photoshop writes and offer retry on failure.
+- Smooth the diamond's muted-color transitions and keep color mapping aligned with selection.
+- Scale the complete panel, unify readable text, and move HSB values above the wheel.
+- Add cursor and RGB marker easing, point the hue marker toward the center, and fix RGB ramp edge seams.
+
 ## 0.4.0
 
 - Match the reference diamond: white at top, neutral gray at left, pure hue at right, black at bottom; keep Canvas colors and pointer mapping aligned.
