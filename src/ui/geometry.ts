@@ -42,21 +42,27 @@ export function constrainToDiamond(pos: Point): Point {
 }
 
 export function hsvToPoint(hsv: Pick<HSV, "s" | "v">): Point {
-  // HSL-shaped diamond: top white, left gray, right pure hue, bottom black.
-  // Keep the public state in HSV for Photoshop and linked-color offsets.
+  // Invert the bilinear four-corner surface while retaining HSV host state.
   const chroma = hsv.v * hsv.s;
-  const lightness = hsv.v - chroma / 2;
-  const span = 1 - Math.abs(2 * lightness - 1);
-  return { x: 0.5 + (2 * chroma - span) * 0.38, y: 0.5 + (1 - 2 * lightness) * 0.38 };
+  const difference = 2 * (hsv.v - chroma) + chroma - 1;
+  const root = Math.sqrt(difference * difference + 4 * chroma);
+  // Avoid cancellation near the neutral white edge.
+  const u = difference > 0 ? (2 * chroma) / (root + difference) : (root - difference) / 2;
+  const v = u + difference;
+  return { x: 0.5 + (u + v - 1) * 0.38, y: 0.5 + (u - v) * 0.38 };
+}
+export function diamondTone(pos: Point): { white: number; chroma: number } {
+  const a = (pos.x - 0.5) / 0.38,
+    b = (pos.y - 0.5) / 0.38;
+  const u = clamp((1 + a + b) / 2, 0, 1),
+    v = clamp((1 + a - b) / 2, 0, 1);
+  // White at top, gray at left, pure hue at right, black at bottom.
+  // Bilinear blending has no middle seam and spreads muted tones into the interior.
+  return { white: ((1 - u) * (1 + v)) / 2, chroma: u * v };
 }
 export function pointToSv(pos: Point, saturationFallback = 0): Pick<HSV, "s" | "v"> {
-  const p = constrainToDiamond(pos),
-    a = (p.x - 0.5) / 0.38,
-    b = (p.y - 0.5) / 0.38;
-  const lightness = clamp((1 - b) / 2, 0, 1);
-  const span = 1 - Math.abs(2 * lightness - 1);
-  const chroma = clamp((a + span) / 2, 0, span);
-  const v = lightness + chroma / 2;
+  const { white, chroma } = diamondTone(constrainToDiamond(pos));
+  const v = white + chroma;
   return { s: v > 1e-12 ? clamp(chroma / v, 0, 1) : saturationFallback, v };
 }
 export function layout(width: number, height: number) {

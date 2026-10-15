@@ -1,4 +1,5 @@
 import { hsvToRgb, toHex } from "../src/color/conversions.js";
+import { diamondTone } from "../src/ui/geometry.js";
 
 // Clip and draw on one canvas so no rectangular color layer can leak.
 export function drawPicker(canvas: HTMLCanvasElement, size: number, hue: number) {
@@ -25,20 +26,26 @@ export function drawPicker(canvas: HTMLCanvasElement, size: number, hue: number)
   context.closePath();
   context.clip();
   const pure = hsvToRgb(hue, 1, 1);
-  // Horizontal saturation and vertical lightness, clipped to the same diamond
-  // used by pointer mapping. One physical-pixel row keeps high-DPI edges smooth.
+  const surface = document.createElement("canvas");
+  surface.width = pixels;
+  surface.height = pixels;
+  const surfaceContext = surface.getContext("2d");
+  if (!surfaceContext) throw new Error("Canvas rendering is unavailable");
+  const image = surfaceContext.createImageData(pixels, pixels);
+  // Use the same continuous surface as hit testing, at physical-pixel resolution.
+  // Clip the composite to retain antialiased edges without colored seams.
   for (let row = Math.floor(0.12 * pixels); row < Math.ceil(0.88 * pixels); row++) {
     const y = (row + 0.5) / pixels;
-    const lightness = Math.max(0, Math.min(1, (0.88 - y) / 0.76));
-    const span = 1 - Math.abs(2 * lightness - 1);
-    if (span < 1e-12) continue;
-    const gray = 255 * lightness;
-    const saturated = [pure.r, pure.g, pure.b].map((value) => gray + span * (value - 127.5));
-    const gradient = context.createLinearGradient(0.5 - span * 0.38, 0, 0.5 + span * 0.38, 0);
-    gradient.addColorStop(0, `rgb(${gray},${gray},${gray})`);
-    gradient.addColorStop(1, `rgb(${saturated.join(",")})`);
-    context.fillStyle = gradient;
-    context.fillRect(0.12, row / pixels, 0.76, 1 / pixels);
+    for (let column = Math.floor(0.12 * pixels); column < Math.ceil(0.88 * pixels); column++) {
+      const { white, chroma } = diamondTone({ x: (column + 0.5) / pixels, y });
+      const offset = (row * pixels + column) * 4;
+      image.data[offset] = Math.round(255 * white + pure.r * chroma);
+      image.data[offset + 1] = Math.round(255 * white + pure.g * chroma);
+      image.data[offset + 2] = Math.round(255 * white + pure.b * chroma);
+      image.data[offset + 3] = 255;
+    }
   }
+  surfaceContext.putImageData(image, 0, 0);
+  context.drawImage(surface, 0, 0, 1, 1);
   context.restore();
 }

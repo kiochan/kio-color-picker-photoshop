@@ -147,6 +147,18 @@ async function run() {
       assert.deepEqual(C.hsvToRgb(0, hsv.s, hsv.v), expected);
     }
   });
+  await test("Diamond spreads muted tones continuously across its interior", () => {
+    const center = G.pointToSv({ x: 0.5, y: 0.5 });
+    assert.deepEqual(C.hsvToRgb(0, center.s, center.v), { r: 159, g: 96, b: 96 });
+    // A crease at the horizontal center used to change the gradient abruptly.
+    for (const x of [0.3, 0.5, 0.7]) {
+      const above = G.diamondTone({ x, y: 0.5 - 0.0001 });
+      const middle = G.diamondTone({ x, y: 0.5 });
+      const below = G.diamondTone({ x, y: 0.5 + 0.0001 });
+      for (const key of ["white", "chroma"])
+        assert.ok(Math.abs(above[key] + below[key] - 2 * middle[key]) < 1e-6);
+    }
+  });
   await test("Bidirectional linked offsets wrap and retain unclipped relation", () => {
     const a = { h: 350, s: 0.2, v: 0.4 },
       b = { h: 10, s: 0.7, v: 0.8 },
